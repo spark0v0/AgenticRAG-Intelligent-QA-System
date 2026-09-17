@@ -10,10 +10,10 @@
 
 技术栈：Vue 3、TypeScript、Vite、Pinia、Vue Router、Element Plus、SCSS、Fetch SSE、markdown-it、DOMPurify、highlight.js；FastAPI、AsyncOpenAI、SQLite、Chroma；Vitest、Vue Test Utils、Playwright、GitHub Actions。
 
-- 设计并实现问答、工具中心与系统概览，按 API、类型、状态、组合式逻辑和业务组件分层；完善多轮会话、图片校验、Markdown 渲染及桌面/窄屏交互。
+- 基于 Vue 3、TypeScript 与 Element Plus 实现问答、供应商管理及运行分析工作台，统一浅深主题和窄屏布局；实现动态模型表单、连接检测、能力配置及默认模型切换，区分凭据配置、接口连接与生成成功状态。
 - 使用 POST Fetch SSE 消费供应方真实增量，通过 UTF-8 分块解码、事件重组、session/run 身份校验及 60ms 批量更新，处理断流恢复、会话竞争和 Critic 多轮草稿替换。
 - 以 Pinia 管理会话与运行状态，结合 AbortController 和后端任务取消，处理重复提交、后台会话执行、完成与取消竞争，失败时恢复输入且不自动重放请求。
-- 将真实节点和工具事件映射为按运行回看的时间线，配合 SQLite 事务保存最终回答、来源和元数据；配置类型检查、Lint、构建及少量核心冒烟，验证历史迁移和关键交互。
+- 将后端真实节点事件映射为可选择的耗时瀑布，支持服务端分页筛选、节点输入输出与工具详情、证据来源回看及单轮 JSON 导出；配合 SQLite 事务恢复最终回答和元数据，以少量核心冒烟验证流程。
 
 不写用户量、并发量、准确率、商业上线经历或性能提升百分比。GitHub Actions 当前可写“配置工作流”，未推送运行前不能写“云端流水线通过”。真实联调范围以 `verification.md` 为准，不把测试夹具耗时当作模型性能。
 
@@ -25,10 +25,12 @@
 | SSE 协议与终态 | `frontend/src/api/sse.ts`、`stores/workbench.ts`、`src/models/client.py` | 发起真实问答，观察增量，停止或刷新 | `frontend/tests/unit/core.test.ts`、`tests/test_workbench_smoke.py`、真实联调 metrics |
 | 会话与异步隔离 | `stores/workbench.ts`、`src/api/workbench.py` | 运行时切换会话，回到原会话停止，手动重试 | Vitest 竞态用例、Playwright 取消重试和恢复 |
 | 可追踪运行与存储 | `ExecutionPanel.vue`、`src/utils/execution.py`、`src/memory/sqlite_memory.py` | 回答下方执行详情，切换来源/工具，刷新回看 | SQLite 迁移/取消后重试测试、历史一致性验证 |
+| 可操作的供应商配置 | `views/ProvidersView.vue`、`api/settings.ts`、`src/api/providers.py` | `/providers` 添加/编辑、检查连接、设默认 | `test_provider_settings.py`、Playwright 表单冒烟、新供应商真实问答 |
+| 运行分析交互 | `views/RunsView.vue`、`composables/useRunAnalysis.ts` | `/runs` 搜索、选择节点、证据、导出、回到会话 | `workspace-runs.png`、`workspace-evidence.png`、`workspace-metrics.json` |
 
 ## 面试讲解
 
-**为什么选这些技术？** Vue 3/TS 对应岗位与复杂交互；Pinia 管共享业务状态，Router 做页面懒加载。Element Plus 只提供成熟选择器，核心异步逻辑由项目实现。时间线足以描述执行，无需 Vue Flow 或工作流编辑。沿用 npm 锁文件，避免迁移包管理器带来额外成本。
+**为什么选这些技术？** Vue 3/TS 对应岗位与复杂交互；Pinia 管共享业务状态，Router 做页面懒加载。Element Plus 提供表单、选择器、开关和弹窗，业务配置映射和异步逻辑由项目实现。CSS 即可实现真实耗时瀑布，无需 Vue Flow 或工作流编辑。沿用 npm 锁文件，避免迁移包管理器带来额外成本。
 
 **组件怎么拆？** App 负责导航和连接初始化；ChatView 负责布局和滚动；Composer 管文件读取与输入；MessageBubble 管一条消息；MarkdownContent 管安全渲染；ExecutionPanel 聚合一次运行。API 适配不放组件。
 
@@ -51,6 +53,8 @@
 **限制与后续？** 单进程本机应用、无鉴权；历史未分页、图片 base64 存储；部分供应方完整返回，同步外部工具只能协作取消；图谱为配置关系，MCP 为示例，Dify 未发布。优先图片文件化与历史分页，再按实际瓶颈考虑任务队列和更多供应方适配。
 
 ## 贡献边界
+
+新增可讲解点：供应商表单的 Key 不回填，不放 localStorage/Pinia；留空保留与显式清除分开。后端管理路由限本机并拒绝跨站写入，Windows 使用 DPAPI。运行页列表与详情分别用版本号/AbortController 管竞态；选择活动运行时有 2 秒轮询，离页清理。图形宽度来自真实节点耗时，界面状态不能伪造验证成功。
 
 已有后端：智能体划分、规则路由/规划/评审、HashEmbeddings + Chroma + 词法检索、工具注册及 LangChain/Dify 包装。
 

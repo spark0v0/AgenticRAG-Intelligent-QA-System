@@ -20,8 +20,10 @@ function dateLabel(timestamp: number) {
 <template>
   <aside class="sidebar" :class="{ 'is-open': open }">
     <a class="brand" href="/chat" @click.prevent="$emit('newChat')"
-      ><span class="brand-mark"><AppIcon name="spark" :size="25" /></span
-      ><span>Agentic<span class="brand-light">RAG</span><small>智能问答与检索</small></span></a
+      ><span class="brand-mark"><AppIcon name="branch" :size="25" /></span
+      ><span
+        >Agentic<span class="brand-light">RAG</span><small>INTELLIGENCE WORKSPACE</small></span
+      ></a
     >
     <button class="new-chat-button" @click="$emit('newChat')">
       <AppIcon name="plus" :size="18" />新建会话
@@ -30,7 +32,9 @@ function dateLabel(timestamp: number) {
       <RouterLink to="/chat"
         ><AppIcon name="chat" :size="18" />智能问答<span class="nav-dot"></span
       ></RouterLink>
+      <RouterLink to="/runs"><AppIcon name="pulse" :size="18" />运行分析</RouterLink>
       <RouterLink to="/tools"><AppIcon name="layers" :size="18" />工具中心</RouterLink>
+      <RouterLink to="/providers"><AppIcon name="server" :size="18" />模型供应商</RouterLink>
       <RouterLink to="/system"><AppIcon name="grid" :size="18" />系统概览</RouterLink>
     </nav>
     <div class="history-heading">
@@ -67,15 +71,17 @@ function dateLabel(timestamp: number) {
       </button>
     </div>
     <div class="sidebar-bottom">
-      <div class="environment-card">
+      <RouterLink to="/providers" class="environment-card">
         <span class="environment-icon"><AppIcon name="globe" :size="18" /></span>
         <div>
           <strong :title="store.profile?.label">{{ store.profile?.label || '尚未连接' }}</strong
           ><small>{{ store.profile?.configured ? '已配置 · 按需调用' : '模型尚未配置' }}</small>
         </div>
         <i class="live-dot" :class="{ offline: !store.system }"></i>
+      </RouterLink>
+      <div class="sidebar-footer">
+        <span>本地工作空间</span><AppIcon name="shield" :size="14" />
       </div>
-      <div class="sidebar-footer"><span>AgenticRAG Workspace</span><span>1.0</span></div>
     </div>
   </aside>
 </template>

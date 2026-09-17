@@ -14,6 +14,12 @@
 | GET /sessions/{id} | messages 中有 id/run_id/result；附带 runs、trace，包含失败和取消运行 |
 | GET /visualization/{id}?run_id=... | 可筛选一次运行的持久化事件 |
 | GET /status | 模型档案含 configured、connection_verified、last_success_at；成功记录来自当前进程的实际回答，不主动探测 |
+| GET /api/runs?search=&status=&offset=0&limit=30 | 分页查询摘要，不返回全部回答；limit 最大 100，返回 items/total |
+| GET /api/runs/{id} | 单轮完整记录及持久化 events，未知 ID 为 404 |
+| GET/POST /api/settings/providers | 列表/新增供应商；响应仅含 has_key，不含密钥 |
+| PUT/DELETE /api/settings/providers/{id} | 修改/移除本机供应商；不删除历史记录 |
+| POST /api/settings/providers/{id}/check | 请求模型列表，返回 ok/message/models；不创建付费 completion |
+| PUT /api/settings/default-model | body: {profile_id}；影响后续请求默认模型 |
 
 请求 context 只接收 thinking_mode/location/retrieval_mode/strategy，不能从浏览器注入 provider、api_key 或 model_config。图片 schema、最大长度、思考模式与模型档案均校验。不支持的参数返回 422；同会话并发/重复运行 ID 返回 409。运行后错误通过 error 事件传达，因为 HTTP 已经是 200。
 
@@ -48,6 +54,12 @@ SSE 队列有容量限制；客户端过慢会停止该轮，终态事件优先�
 
 ## SQLite 与迁移
 
+供应商配置独立保存在 `data/settings/providers.sqlite3`，环境变量 `AGENTICRAG_SETTINGS` 可覆盖。providers 保存设置 JSON、保护后的 secret 和连接检查结果；preferences 保存默认模型。自动创建表，重复启动幂等。原 YAML 继续作为只读配置，不自动改写或导入凭据；新模型 ID 为 `managed:<provider UUID>:<model ID>`，不会覆盖文件配置 ID。
+
+供应商 body：name、protocol（openai/deepseek/ollama/xinference）、base_url、api_key、clear_key、timeout_seconds、models。models 每项有 model_name/label/supports_vision/supports_streaming/enabled/max_tokens；同供应商模型 ID 唯一。OpenAI 兼容地址为 `/v1` 等基础地址；Ollama 为根地址，Xinference 为 `/v1`。远程仅 HTTPS，本机可 HTTP，拒绝 URL 中的用户凭据、query 和 fragment。修改时空 Key 保留原值，clear_key 显式清除。Ollama/Xinference 当前强制完整结果模式。
+
+Windows secret 使用 DPAPI 用户级加密；其他系统为目录 0700/文件 0600 的本机明文存储。该库不适合作为跨用户凭据备份。保存不改变运行中的配置快照；配置更新使旧的实际生成验证失效。模型列表检测返回前比较连接配置，旧检测不能把新地址/Key 标为连接成功。
+
 保留 `memory/session_memory.py` 旧实现供历史代码参考，RAG 主链已使用 `memory/sqlite_memory.py`。
 
 - sessions：会话 ID 与创建时间。
@@ -74,9 +86,11 @@ $env:PYTHONPATH='src'
 
 FastAPI 同源提供 SPA 与 API，无需跨域白名单。构建后启动服务，GET 已知前端路径返回 index；未知路径 404。默认 127.0.0.1，单 worker。若外接反向代理，关闭 SSE 响应缓冲，保持长连接超时；不需要 Nginx 才能本机运行。
 
+`/providers` 是 SPA 页面。`/runs` 和 `/tools` 同时兼容 HTML 页面和旧 JSON 路由，`/api/runs`、`/api/tools` 始终为 API。供应商管理仅接受本机来源和本机 Host，写操作必须包含 `X-Workbench-Request: 1`，拒绝外站 Origin；这用于本机工作台的跨站防护，**不是公网身份认证**。API 参数错误不返回 Pydantic 原始 input，防止回显输入 Key。
+
 `public_data` 递归去掉凭据键、model_config/raw_response，并对已知环境密钥与常见 URL token 做替换。检索排除配置、环境文件、测试及退役样例，并在分块前过滤已知密钥。用户请求与第三方内容仍可能包含任意敏感文本；此过滤不是通用 DLP。公开截图使用隔离历史和仓库公开资料，回答仍来自真实供应方。
 
-`connection_verified` 没有额外主动探测接口。图片能力来自 provider/模型默认值或配置声明，不保证所有兼容供应方都实现视觉接口。只接受 openai/deepseek/ollama/xinference 提供方，拒绝 mock 和未实现提供方。完整结果和流式生成均禁止自动切换备用模型；模型失败进入错误终态。更严格的认证、媒体内容校验、分页和多进程任务队列属于后续改进。
+`connection_verified` 不由模型列表检测设置，只在真实生成成功后设置。图片能力来自 provider/模型默认值或配置声明，不保证所有兼容供应方都实现视觉接口。只接受 openai/deepseek/ollama/xinference 提供方，拒绝 mock 和未实现提供方。完整结果和流式生成均禁止自动切换备用模型；模型失败进入错误终态。更严格的认证、媒体内容校验、会话分页和多进程任务队列属于后续改进。
 
 ## 演示模式退役
 

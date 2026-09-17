@@ -186,11 +186,14 @@ function handleKey(event: KeyboardEvent) {
     <div class="composer-footnote">
       <span>{{
         !store.profile?.configured
-          ? '所选模型尚未配置，请检查后端模型档案。'
+          ? '所选模型尚未配置'
           : store.hasPending && !store.busy
             ? '其他会话正在后台运行'
             : 'AI 回答可能存在偏差，请结合来源核实重要信息'
       }}</span>
+      <RouterLink v-if="!store.profile?.configured" to="/providers"
+        >配置供应商 <AppIcon name="right" :size="12"
+      /></RouterLink>
     </div>
   </div>
 </template>

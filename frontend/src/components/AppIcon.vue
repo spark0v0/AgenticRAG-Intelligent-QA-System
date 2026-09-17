@@ -30,6 +30,15 @@ import {
   User,
   TriangleAlert,
   Code,
+  Server,
+  KeyRound,
+  Download,
+  Pencil,
+  Trash2,
+  ShieldCheck,
+  GitBranch,
+  ArrowUpRight,
+  SlidersHorizontal,
 } from '@lucide/vue'
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), { size: 20 })
 const icons = {
@@ -62,6 +71,15 @@ const icons = {
   user: User,
   alert: TriangleAlert,
   code: Code,
+  server: Server,
+  key: KeyRound,
+  download: Download,
+  edit: Pencil,
+  trash: Trash2,
+  shield: ShieldCheck,
+  branch: GitBranch,
+  diagonal: ArrowUpRight,
+  settings: SlidersHorizontal,
 }
 const icon = computed(() => icons[props.name as keyof typeof icons] ?? Sparkles)
 </script>

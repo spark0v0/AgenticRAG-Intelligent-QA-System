@@ -72,12 +72,15 @@ function inspect(runId: string) {
       <div ref="scroller" class="conversation-scroll" @scroll="onScroll">
         <div v-if="store.loadingSession" class="loading-session" role="status">正在恢复会话…</div>
         <div v-else-if="!store.current?.messages.length" class="welcome">
-          <div class="welcome-symbol">
-            <img src="/favicon.svg" alt="" width="48" height="48" />
+          <div class="workspace-label"><span></span> YOUR RESEARCH SPACE</div>
+          <h1>AgenticRAG<span>智能问答与检索</span></h1>
+          <div class="welcome-model">
+            <AppIcon name="server" :size="15" />{{ store.profile?.label || '尚未选择模型'
+            }}<span class="status-badge" :class="{ ready: store.profile?.configured }">{{
+              store.profile?.configured ? '已配置' : '待配置'
+            }}</span>
           </div>
-          <h1>AgenticRAG</h1>
-          <p class="welcome-description">智能问答与检索工作台</p>
-          <div class="suggestion-heading">常用问题</div>
+          <div class="suggestion-heading">开始探索 <span>01 — 04</span></div>
           <div class="suggestion-grid">
             <button
               v-for="prompt in prompts"
@@ -88,8 +91,17 @@ function inspect(runId: string) {
               <span class="suggestion-icon"><AppIcon :name="prompt.icon" :size="20" /></span
               ><strong>{{ prompt.title }}</strong>
               <p>{{ prompt.description }}</p>
-              <AppIcon name="right" :size="14" />
+              <AppIcon name="diagonal" :size="17" />
             </button>
+          </div>
+          <div class="workspace-links">
+            <RouterLink to="/runs"
+              ><AppIcon name="pulse" :size="16" />运行记录<AppIcon
+                name="right"
+                :size="14" /></RouterLink
+            ><RouterLink to="/providers"
+              ><AppIcon name="settings" :size="16" />模型供应商<AppIcon name="right" :size="14"
+            /></RouterLink>
           </div>
         </div>
         <div v-else class="messages">

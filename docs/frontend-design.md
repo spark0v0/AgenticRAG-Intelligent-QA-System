@@ -16,7 +16,7 @@
 | TypeScript | SessionSummary、Message、QueryRequest/Result、Source、ToolCall、ExecutionEvent 判别联合 |
 | Vite / Vue Router | 独立开发代理、生产构建；页面路由懒加载 |
 | Pinia | 多会话、当前会话、处理模式、模型、运行状态和执行记录 |
-| Element Plus | 仅复用模型/模式选择器；会话生命周期和流消费由本项目实现 |
+| Element Plus | 复用表单、输入、选择器、数字输入、开关、对话框及移除确认；供应商生命周期、运行分析、会话和流消费由本项目实现 |
 | Fetch / ReadableStream | POST 同时提交问题与图片，无需 EventSource 的额外任务创建连接 |
 | markdown-it / DOMPurify / highlight.js | Markdown 解析、安全净化和有限语言高亮 |
 | SCSS / CSS 变量 / @lucide/vue | 响应式样式、主题与维护中的图标库；旧 lucide-vue-next 安装时已被标记 deprecated，改用官方后继包 |
@@ -31,10 +31,12 @@
 frontend/src/
   api/client.ts              Fetch、HTTP 错误与 API 路径
   api/sse.ts                 UTF-8 解码、SSE 帧重组、终态和身份校验
+  api/settings.ts            供应商增删改、连接检查与默认模型
   types/index.ts             接口类型、运行状态和事件判别联合
   stores/workbench.ts        会话缓存、历史恢复、运行资源与并发控制
   composables/useAutoScroll.ts  是否跟随与回到底部
   composables/useClipboard.ts   复制反馈和计时器清理
+  composables/useRunAnalysis.ts 节点归并、耗时投影、安全来源链接
   components/AppSidebar.vue     会话搜索和导航
   components/ChatComposer.vue   输入、中文 IME、模型与附件选择
   components/MessageBubble.vue  用户/助手消息与运行入口
@@ -43,6 +45,8 @@ frontend/src/
   views/ChatView.vue            问答布局、详情展开、滚动容器
   views/ToolsView.vue           只读工具 schema 与筛选
   views/SystemView.vue          只读模型能力和环境信息
+  views/ProvidersView.vue       供应商表单、模型发现、能力声明与默认选择
+  views/RunsView.vue            分页运行索引、瀑布选择、证据、回答与导出
   router/ styles/
 ```
 
@@ -82,6 +86,14 @@ Markdown 禁用原始 HTML，再经 DOMPurify 净化；禁止远程图片/iframe
 
 ## 本轮界面完善
 
-采用中性白/灰工作区、绿色主操作、少量青色工具标识，CSS 变量维护浅色/深色主题。系统中文字体避免外部字体请求；正文 14～16px，欢迎标题 28～32px，不使用视口缩放字体。侧栏固定宽度、输入区稳定停靠，消息限制阅读宽度；窄屏导航收起，详情作为侧面覆盖层。工具列表与模型表用于比较，只有常用问题和来源等重复项目使用小圆角卡片。
+采用炭黑导航、白色工作区、钴蓝主操作；检索节点使用青色、评审使用珊瑚色，成功/失败有独立状态色。字体优先微软雅黑/PingFang，避免外部字体请求；字号固定，正文 14～16px，页面标题 23～27px。CSS 变量维护浅色/深色主题，Element Plus 组件使用同一主色。侧栏固定宽度、输入区停靠、消息限制阅读宽度；窄屏导航收起，运行索引转为可横向滚动的列表。新增设计样式集中在 `styles/workspace.scss`，原有消息/Markdown/详情基础样式仍在 `main.scss`。
 
-不增加 UI 框架和复杂图编辑依赖。Element Plus 只承担选择器基础交互，运行隔离、草稿替换、流消费、取消确认、历史重建由业务代码实现。常用问题填入草稿，不会点击即产生模型费用。模型状态刷新不触发付费探测，连接成功只来自当前服务进程完成的真实回答。
+没有新增 UI 框架或图编辑依赖。Element Plus 负责成熟表单与弹窗的基础交互，业务组件负责配置映射、错误恢复与提交状态。常用问题只填入草稿。供应商检测仅请求模型列表，`check_ok` 不等于生成成功；系统页 `connection_verified` 仍只来自本次进程中完成的真实回答。
+
+## 新页面的状态边界
+
+供应商数据和表单草稿属于页面局部状态，不进入 Pinia/localStorage。Key 仅停留在表单内存与保存请求中，保存/关闭后清空；已保存 Key 只返回 has_key。后端更改配置后刷新共享模型列表，不重建正在运行的问答系统。每个运行仍使用已经捕获的配置字典；旧配置的回答成功不会把新配置误标为已验证。
+
+运行分析通过 `/runs` 分页查询摘要，通过 `/runs/{id}` 获取单轮详情；URL query 保存所选 run，支持刷新和从消息跳转。搜索防抖 250ms；列表和详情各有 AbortController/版本号，旧响应不能覆盖新选择。进行中的选中运行每 2 秒刷新，离页清理轮询和连接。瀑布位置来自真实 started_at，条长来自 duration_ms；小于一个像素的节点设最小可见宽度，数字耗时仍是真实值。未结束节点不估造耗时，视图不重放 token。
+
+来源展示后端证据，不推断句子级引用。节点期间的工具通过时间区间归属，只称「节点期间的工具调用」，不捏造父子 ID。导出是单轮已脱敏服务端记录，仍包含问题、回答和证据，需自行确认是否适合分享。

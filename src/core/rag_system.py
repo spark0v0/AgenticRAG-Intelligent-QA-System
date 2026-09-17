@@ -74,13 +74,16 @@ class AgenticRAGSystem:
     async def _run_query(self, user_query: str, context, execution: Execution) -> Dict[str, Any]:
         token = current_execution.set(execution)
         try:
+            profile = self._resolve_model_profile((context or {}).get("model_profile"))
+            original_config = dict(profile["config"])
             execution.emit("started", {"mode": "live"})
             result = await self._query(user_query, context, execution.session_id)
             result["run_id"] = execution.run_id
             result["execution_trace"] = self.memory.get_events(execution.session_id, execution.run_id)
             stored = {k: v for k, v in result.items() if k not in {"messages", "execution_trace", "capabilities", "_turn"}}
             self.memory.complete_run(execution.run_id, public_data(stored), public_data(result.pop("_turn")))
-            if result.get("model_provider") in {"openai", "deepseek", "ollama", "xinference"}:
+            if (result.get("model_provider") in {"openai", "deepseek", "ollama", "xinference"}
+                    and self.model_profiles.get(result["model_profile"], {}).get("config") == original_config):
                 self._verified_models[result["model_profile"]] = time.time()
             execution.emit("completed", {"result": {k: v for k, v in result.items()
                                                      if k not in {"messages", "execution_trace", "capabilities"}}})
@@ -279,6 +282,8 @@ class AgenticRAGSystem:
         self._log_execution(session_id, "planning", plan.metadata)
         self._ensure_not_cancelled(session_id)
         retrieval_context = {
+            "model_config": (context or {}).get("model_config"),
+            "model_profile": (context or {}).get("model_profile"),
             "tools": plan.metadata.get("recommended_tools", []),
             "strategy": plan.metadata.get("strategy"),
             "intent": plan.metadata.get("intent"),

@@ -32,3 +32,4 @@ frontend/test-results/
 frontend/playwright-report/
 data/demo/
 data/smoke/
+data/settings/

@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT / "src") not in sys.path:
@@ -17,6 +19,7 @@ if str(ROOT / "src") not in sys.path:
 load_dotenv(ROOT / ".env")
 
 from api.workbench import router, systems
+from api.providers import router as provider_router
 
 
 @asynccontextmanager
@@ -32,6 +35,15 @@ async def lifespan(app):
 app = FastAPI(title="AgenticRAG 智能问答工作台", version="4.0.0", lifespan=lifespan)
 app.include_router(router)
 app.include_router(router, prefix="/api", include_in_schema=False)
+app.include_router(provider_router, prefix="/api")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request, exc):
+    # Pydantic's default response echoes invalid input, which can include credentials.
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()
+    ]})
 DIST = ROOT / "frontend/dist"
 if (DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
@@ -50,7 +62,7 @@ async def favicon():
 @app.get("/{path:path}", include_in_schema=False)
 async def frontend(path: str):
     # Only known client routes get the SPA; misspelled API routes remain 404.
-    if path not in {"", "chat", "tools", "system"}:
+    if path not in {"", "chat", "tools", "system", "providers", "runs"}:
         raise HTTPException(404, "Not found")
     if (DIST / "index.html").exists():
         return FileResponse(DIST / "index.html")

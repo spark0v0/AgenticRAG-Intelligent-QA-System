@@ -7,6 +7,13 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+_local_secrets: set[str] = set()
+
+
+def register_secret(value: str) -> None:
+    if value:
+        _local_secrets.add(value)
+
 
 def public_data(value: Any) -> Any:
     if isinstance(value, dict):
@@ -17,6 +24,8 @@ def public_data(value: Any) -> Any:
     if isinstance(value, str):
         if value.startswith("data:image/"):
             return value
+        for secret in _local_secrets:
+            value = value.replace(secret, "[redacted]")
         for key, secret in os.environ.items():
             if (key.endswith("API_KEY") or key.endswith("TOKEN")) and len(secret) > 8:
                 value = value.replace(secret, "[redacted]")

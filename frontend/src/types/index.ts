@@ -165,3 +165,34 @@ export type ExecutionEvent = {
 }[keyof EventPayloads]
 export type StageEvent = Extract<ExecutionEvent, { type: 'stage' }>
 export type ToolEvent = Extract<ExecutionEvent, { type: 'tool' }>
+
+export interface ProviderModel {
+  model_name: string
+  label: string
+  supports_vision: boolean
+  supports_streaming: boolean
+  enabled: boolean
+  max_tokens: number
+}
+export interface ProviderSettings {
+  name: string
+  protocol: 'openai' | 'deepseek' | 'ollama' | 'xinference'
+  base_url: string
+  timeout_seconds: number
+  models: ProviderModel[]
+}
+export interface ProviderRecord extends ProviderSettings {
+  id: string
+  has_key: boolean
+  checked_at?: number
+  check_ok: boolean | null
+  check_message?: string
+}
+export interface ProviderList {
+  items: ProviderRecord[]
+  default_profile: string | null
+  credential_storage: 'windows-dpapi' | 'local-file-0600'
+}
+export interface RunDetail extends RunRecord {
+  events: ExecutionEvent[]
+}

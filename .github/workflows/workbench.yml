@@ -19,7 +19,7 @@ jobs:
         working-directory: frontend
       - run: npm run lint && npm run format:check && npm run smoke && npm run build
         working-directory: frontend
-      - run: python -m pytest tests/test_workbench_smoke.py -q
+      - run: python -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py -q
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm run smoke:browser

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import type { StageEvent, ToolEvent } from '../types'
 import AppIcon from './AppIcon.vue'
+import { sourceLabel } from '../composables/useRunAnalysis'
 defineEmits<{ close: [] }>()
 const store = useWorkbench()
 const tab = ref('trace')
@@ -86,6 +87,12 @@ function format(value: unknown) {
     </template>
     <template v-else>
       <div class="run-summary">
+        <RouterLink
+          v-if="store.selectedMessage.run_id"
+          class="run-open"
+          :to="{ path: '/runs', query: { run: store.selectedMessage.run_id } }"
+          ><AppIcon name="diagonal" :size="15" />打开运行分析</RouterLink
+        >
         <span class="eyebrow">EXECUTION RECORD</span
         ><strong>{{
           result?.routing?.route === 'planning'
@@ -194,8 +201,8 @@ function format(value: unknown) {
               :href="safeUrl(source.source)"
               target="_blank"
               rel="noopener noreferrer"
-              >{{ source.source }}<AppIcon name="external" :size="12" /></a
-            ><strong v-else>{{ source.source }}</strong>
+              >{{ sourceLabel(source.source) }}<AppIcon name="external" :size="12" /></a
+            ><strong v-else>{{ sourceLabel(source.source) }}</strong>
             <p>{{ source.excerpt || '当前记录只有来源标识，没有保存证据片段。' }}</p>
           </article></template
         >

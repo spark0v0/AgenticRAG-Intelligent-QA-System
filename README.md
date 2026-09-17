@@ -2,7 +2,9 @@
 
 Vue 3 中文 AI 工作台，连接已有 Python/FastAPI AgenticRAG 执行链。提供多轮会话、图片附件、模型选择、真实 SSE 回答、停止生成、来源和工具详情、执行时间线与历史恢复。产品仅保留真实业务路径；没有凭据或调用失败时显示错误，不生成模拟成功回答。
 
-![问答工作台](docs/screenshots/real-workbench-desktop.png)
+![运行分析](docs/screenshots/workspace-runs.png)
+
+新增可写入的模型供应商管理与独立运行分析：添加兼容供应商、保存本机凭据、发现模型、设置默认模型；按运行检索、查看真实耗时瀑布、证据及最终回答，并导出 JSON。Windows 新增凭据由当前用户 DPAPI 加密。界面使用 Element Plus 表单/弹窗/选择器与自定义业务布局，保留浅色和深色主题。
 
 ## 安装与启动
 
@@ -32,18 +34,18 @@ npm run dev
 
 ## 使用
 
-1. 在系统概览检查模型档案。已配置不等于连接成功；成功调用记录来自本次后端启动后的实际回答。
+1. 打开「模型供应商」，添加服务名称、协议、基础地址和 API Key。保存后检测连接，可发现模型，也可直接填写供应商文档中的模型 ID。配置流式/图片能力后保存并设为默认。连接检查只访问模型列表，不发送问答；接口已连接、凭据已配置、模型实际调用成功是三种不同状态。
 2. 新建会话，选择模型及处理模式，输入问题。Enter 发送、Shift+Enter 换行；中文组合输入不会误发送。常用问题只填入输入框，由用户确认发送。
 3. 支持图片的模型可添加 PNG/JPEG/WebP/GIF，每轮最多 4 张、每张 4MiB。能力来自后端配置声明，供应方实际支持情况仍须联调。
 4. 回答过程中可停止。失败或取消会恢复输入，重试需手动发送。切换会话后原任务继续执行，返回原会话可停止。
-5. 从回答下方打开执行详情，查看实际节点、轮次、来源、证据与工具结果。刷新恢复已保存历史；旧 JSON 会话可能没有运行元数据。
+5. 从回答下方打开执行详情，或进入「运行分析」按问题/状态查找记录。选择瀑布节点查看输入输出、节点期间工具调用；切换证据/最终回答，导出单次运行 JSON，或回到原会话。刷新恢复已保存历史；旧 JSON 会话可能没有运行元数据。
 6. 工具中心支持搜索、协议筛选和 Schema 查看，系统概览支持刷新；两页不提供配置写入。
 
 ## 模型与数据
 
-模型沿用 `config/config.yaml` 的 `model`、`model_profiles`。API Key 仅放后端 `.env` 或环境变量，按档案中的 `api_key_env` 配置；不要使用 `VITE_*` 保存凭据。可通过 `AGENTICRAG_CONFIG` 指向其他 YAML 配置。无需在聊天中提供密钥。
+优先通过「模型供应商」配置，保存于 Git 忽略的 `data/settings/providers.sqlite3`。Windows 使用 DPAPI 当前用户加密，跨机器/用户迁移需重新填写 Key；其他系统使用权限为 0600 的本地文件，**不是加密存储**。编辑时空 Key 表示保留，清除需要显式打开开关。浏览器不缓存或回读 Key，网络请求仍会把用户刚输入的 Key 交给本机后端；不要分享开发者工具中的请求体。
 
-首次克隆后，在项目根目录执行 `Copy-Item .env.example .env`，填入自己的后端凭据。本仓库的配置不包含密钥，也不包含私人会话或知识文档；未配置凭据时显示未配置状态。
+原 `config/config.yaml` 的 `model`、`model_profiles` 保持兼容，在页面作为只读文件配置展示；仍可通过后端 `.env`/环境变量提供其凭据。选择此方式时执行 `Copy-Item .env.example .env`。`AGENTICRAG_CONFIG` 可指定其他 YAML，`AGENTICRAG_SETTINGS` 可指定供应商库。不要使用 `VITE_*` 保存 Key。本仓库不分发本机凭据和会话数据库，未配置时如实提示。
 
 OpenAI/DeepSeek 使用 AsyncOpenAI 真实增量。`supports_streaming: false`、Ollama、Xinference 明确返回完整结果模式，阶段进度仍可见。问答失败不会自动重发，也不自动切换备用模型。原有规则路由和工具选择回退会在执行摘要中标识，不是模拟回答。Critic 是规则评审，修订可能产生额外模型调用。
 
@@ -62,7 +64,7 @@ npm run format:check
 npm run smoke
 npm run build
 cd ..
-.\.venv\Scripts\python.exe -B -m pytest tests/test_workbench_smoke.py -q
+.\.venv\Scripts\python.exe -B -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py -q
 ```
 
 本机系统临时目录权限异常时，可追加 `--basetemp=.cache/pytest-唯一名称`，指定新的专用目录，避免 pytest 清理其他数据。

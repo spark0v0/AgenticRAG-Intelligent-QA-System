@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-17T17:25:27.885Z",
+  "errors": [],
+  "mockedResponses": false,
+  "viewports": [
+    {
+      "path": "chat",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "providers",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "runs",
+      "width": 390,
+      "overflow": false
+    }
+  ],
+  "managedProviderQueryMs": 9005,
+  "managedProviderResult": {
+    "status": "success",
+    "profileIsManaged": true
+  },
+  "providerCheck": "模型列表接口连接成功；生成与图片能力仍以实际调用为准。",
+  "exportDownloaded": true,
+  "historyAnswerVisible": true,
+  "screenshots": 12
+}

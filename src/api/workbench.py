@@ -28,6 +28,8 @@ def get_system(mode: Mode = "live") -> AgenticRAGSystem:
     if mode not in systems:
         config = Config(os.getenv("AGENTICRAG_CONFIG", str(ROOT / "config/config.yaml"))).config
         system = AgenticRAGSystem(config)
+        from api.providers import apply_settings
+        apply_settings(system)
         system.memory.recover_interrupted_runs()
         systems[mode] = system
     return systems[mode]
@@ -76,7 +78,7 @@ def query_context(request: QueryRequest, system: AgenticRAGSystem) -> dict:
     if client.provider not in {"openai", "deepseek", "ollama", "xinference"}:
         raise HTTPException(422, "此模型提供方尚未接入，请选择已支持的模型档案")
     if not client.is_available:
-        raise HTTPException(503, "模型尚未配置凭据，请在后端配置对应环境变量后重启服务")
+        raise HTTPException(503, "模型尚未配置凭据，请在模型供应商页面添加配置")
     # Public requests may select server profiles, never inject provider credentials/configuration.
     allowed = {"thinking_mode", "location", "retrieval_mode", "strategy"}
     context = {k: v for k, v in (request.context or {}).items() if k in allowed}
@@ -170,6 +172,24 @@ async def cancel_session(session_id: str, mode: Mode = "live"):
 @router.get("/status")
 async def status(mode: Mode = "live"):
     return public_data(get_system(mode).system_status())
+
+
+@router.get("/runs")
+async def runs(request: Request, search: str = "", status: str = "", offset: int = 0, limit: int = 30):
+    if request.url.path == "/runs" and "text/html" in request.headers.get("accept", ""):
+        index = ROOT / "frontend/dist/index.html"
+        if index.exists():
+            return FileResponse(index)
+    return public_data(get_system().memory.search_runs(search[:200], status, max(offset, 0), min(max(limit, 1), 100)))
+
+
+@router.get("/runs/{run_id}")
+async def run_detail(run_id: str):
+    memory = get_system().memory
+    run = memory.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, "运行记录不存在")
+    return public_data({**run, "events": memory.get_events(run["session_id"], run_id)})
 
 
 @router.get("/tools")

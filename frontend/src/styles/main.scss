@@ -1,45 +1,59 @@
 @use 'sass:color';
 
-:root {
-  font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  color: #25322e;
-  background: #f8faf9;
+:root:root {
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif;
+  color: #242630;
+  background: #f6f7f9;
   font-size: 14px;
   letter-spacing: 0;
   --bg: #fff;
-  --surface: #f5f7f6;
-  --surface-hover: #eaf0ed;
-  --text: #25322e;
-  --muted: #66746e;
-  --line: #e1e7e4;
-  --accent: #147d61;
-  --accent-soft: #e8f4ef;
+  --surface: #f6f7f9;
+  --surface-hover: #eef0f4;
+  --text: #242630;
+  --muted: #697180;
+  --line: #e5e7ed;
+  --accent: #2458dc;
+  --accent-soft: #eef3ff;
+  --success: #17836f;
+  --cyan: #087f8c;
+  --coral: #c45c50;
   --warning: #9c591b;
   --warning-bg: #fff5e9;
   --error: #b13c3c;
-  --el-color-primary: #147d61;
+  --el-color-primary: #2458dc;
+  --el-color-primary-light-3: #658bee;
+  --el-color-primary-light-5: #91acf3;
+  --el-color-primary-light-7: #c1d0f8;
+  --el-color-primary-light-9: #eef3ff;
+  --el-color-primary-dark-2: #1845b7;
   --el-border-radius-base: 6px;
-  --el-font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --el-font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif;
   color-scheme: light;
 }
 :root[data-theme='dark'] {
-  --bg: #1b211f;
-  --surface: #151a18;
-  --surface-hover: #29332e;
-  --text: #e2eae5;
-  --muted: #a0b0a7;
-  --line: #354139;
-  --accent: #68c6a5;
-  --accent-soft: #203b30;
+  --bg: #202126;
+  --surface: #191a1f;
+  --surface-hover: #2c2e36;
+  --text: #e7e8ed;
+  --muted: #a4a9b7;
+  --line: #363841;
+  --accent: #91b1ff;
+  --accent-soft: #27334c;
+  --success: #66c8ac;
+  --cyan: #68cbd6;
+  --coral: #f09388;
   --warning: #ebbc77;
   --warning-bg: #3b3021;
   --error: #f48f8f;
-  --el-color-primary: #68c6a5;
-  --el-fill-color-blank: #1b211f;
-  --el-text-color-regular: #e2eae5;
-  --el-text-color-primary: #e2eae5;
-  --el-border-color: #354139;
-  --el-fill-color-light: #29332e;
+  --el-color-primary: #91b1ff;
+  --el-bg-color: #202126;
+  --el-bg-color-overlay: #202126;
+  --el-fill-color-blank: #202126;
+  --el-text-color-regular: #e7e8ed;
+  --el-text-color-primary: #e7e8ed;
+  --el-border-color: #363841;
+  --el-border-color-light: #363841;
+  --el-fill-color-light: #2c2e36;
   color-scheme: dark;
 }
 * {
@@ -323,7 +337,7 @@ p {
   height: 6px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--success);
 }
 .live-dot.offline {
   background: #939b96;

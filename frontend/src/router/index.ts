@@ -15,6 +15,16 @@ export const router = createRouter({
       meta: { title: '工具中心' },
     },
     {
+      path: '/providers',
+      component: () => import('../views/ProvidersView.vue'),
+      meta: { title: '模型供应商' },
+    },
+    {
+      path: '/runs',
+      component: () => import('../views/RunsView.vue'),
+      meta: { title: '运行分析' },
+    },
+    {
       path: '/system',
       component: () => import('../views/SystemView.vue'),
       meta: { title: '系统概览' },

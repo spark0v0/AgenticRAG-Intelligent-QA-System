@@ -165,5 +165,14 @@ class SessionMemory:
 
     def get_run(self, run_id: str) -> dict | None:
         with self.connect() as db:
-            row = db.execute("SELECT status,result,error FROM runs WHERE id=?", (run_id,)).fetchone()
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
         return {**dict(row), "result": json.loads(row["result"]) if row["result"] else None} if row else None
+
+    def search_runs(self, search: str, status: str, offset: int, limit: int) -> dict:
+        where = "WHERE (?='' OR instr(lower(query),lower(?))>0) AND (?='' OR status=?)"
+        params = (search, search, status, status)
+        with self.connect() as db:
+            total = db.execute("SELECT count(*) FROM runs " + where, params).fetchone()[0]
+            rows = db.execute("SELECT id,session_id,status,started_at,finished_at,query,error FROM runs "
+                              + where + " ORDER BY started_at DESC LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall()
+        return {"items": [dict(row) for row in rows], "total": total}
