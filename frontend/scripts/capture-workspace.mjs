@@ -2,7 +2,7 @@
 import { chromium, expect as baseExpect } from '@playwright/test'
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 
-const baseURL = process.env.WORKBENCH_URL || 'http://127.0.0.1:8003'
+const baseURL = process.env.WORKBENCH_URL || 'http://127.0.0.1:8005'
 const expect = baseExpect.configure({ timeout: 30000 })
 const output = '../docs/screenshots'
 mkdirSync(output, { recursive: true })
@@ -14,7 +14,11 @@ page.on('pageerror', error => errors.push(error.message))
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
 const metrics = { date: new Date().toISOString(), errors, mockedResponses: false, viewports: [] }
 const previous = existsSync(`${output}/workspace-metrics.json`) ? JSON.parse(readFileSync(`${output}/workspace-metrics.json`, 'utf8')) : {}
-for (const key of ['managedProviderQueryMs', 'managedProviderResult']) if (previous[key]) metrics[key] = previous[key]
+metrics.previousModelVerification = previous.previousModelVerification || {
+  date: previous.date, managedProviderQueryMs: previous.managedProviderQueryMs,
+  managedProviderResult: previous.managedProviderResult,
+}
+metrics.newModelRequest = process.env.AGENTICRAG_REAL_SMOKE === '1'
 async function capture(name) {
   await expect(page.locator('.connection-line')).toHaveCount(0)
   await page.screenshot({ path: `${output}/${name}.png`, animations: 'disabled' })
@@ -63,7 +67,15 @@ try {
   if (evidenceRun) {
     await page.goto(`${baseURL}/runs?run=${evidenceRun.id}`)
     await expect(page.locator('.waterfall-row').first()).toBeVisible()
+    await page.locator('.waterfall-row').filter({ hasText: '答案生成' }).click()
     await capture('workspace-runs')
+    await page.getByRole('tab',{name:'最终回答'}).click()
+    const citation = page.locator('.run-answer .citation-link').first()
+    if (await citation.count()) {
+      await citation.click()
+      await expect(page.locator('.evidence-item:focus')).toBeVisible()
+      metrics.runCitationNavigation = true
+    }
     await page.getByRole('tab',{name:'证据来源'}).click()
     await expect(page.locator('.evidence-item').first()).toBeVisible()
     await capture('workspace-evidence')
@@ -74,6 +86,13 @@ try {
     await expect(page.locator('.message.assistant .markdown').first()).toBeVisible()
     await page.getByRole('button',{name:'展开执行详情',exact:true}).click()
     await capture('workspace-answer')
+    const messageCitation = page.locator('.message.assistant .citation-link').first()
+    if (await messageCitation.count()) {
+      await messageCitation.click()
+      await expect(page.locator('.source-card:focus')).toBeVisible()
+      metrics.chatCitationNavigation = true
+      await capture('workspace-citation')
+    }
     metrics.historyAnswerVisible = (await page.locator('.message.assistant .markdown').first().textContent()).length > 10
   }
   for (const path of ['tools','system']) {
@@ -89,12 +108,40 @@ try {
     metrics.viewports.push({path,width:390,overflow})
     expect(overflow).toBe(false)
     await capture(`workspace-${path}-mobile`)
+    if (path === 'providers') {
+      await page.getByRole('button', { name: /编辑 DeepSeek/ }).click()
+      await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
+      await capture('workspace-provider-form-mobile')
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+      const saveBounds = await page.getByRole('button', { name: '保存配置', exact: true }).boundingBox()
+      expect(saveBounds.y + saveBounds.height).toBeLessThanOrEqual(844)
+      metrics.mobileFormFooterVisible = true
+      await page.getByRole('button', { name: '取消', exact: true }).click()
+    }
+    if (path === 'runs') {
+      await page.getByRole('button', { name: '返回运行列表' }).click()
+      await expect(page.locator('.run-detail')).toBeHidden()
+      await capture('workspace-runs-list-mobile')
+      metrics.mobileListDetailNavigation = true
+    }
   }
+  await page.goto(`${baseURL}/chat`)
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  await expect(page.locator('.welcome .composer')).toBeVisible()
+  await capture('workspace-empty-mobile')
+  await page.setViewportSize({ width: 320, height: 740 })
+  await expect(page.getByRole('button', { name: '发送问题' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  metrics.viewports.push({ path: 'empty-chat', width: 320, overflow: false })
   await page.setViewportSize({width:1440,height:1000})
   await page.goto(`${baseURL}/providers`)
   await page.getByRole('button',{name:'切换深色主题'}).click()
   await capture('workspace-dark')
-  metrics.screenshots = 12
+  await page.getByRole('button', { name: /编辑 DeepSeek/ }).click()
+  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
+  await capture('workspace-dark-form')
+  metrics.screenshots = 17
   expect(errors).toEqual([])
 } finally {
   writeFileSync(`${output}/workspace-metrics.json`,JSON.stringify(metrics,null,2))

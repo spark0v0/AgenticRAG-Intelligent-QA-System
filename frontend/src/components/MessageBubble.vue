@@ -4,7 +4,7 @@ import AppIcon from './AppIcon.vue'
 import MarkdownContent from './MarkdownContent.vue'
 import { useClipboard } from '../composables/useClipboard'
 defineProps<{ message: Message; selected: boolean }>()
-defineEmits<{ inspect: [runId: string] }>()
+defineEmits<{ inspect: [runId: string, sourceId?: string] }>()
 const { copy, feedback } = useClipboard()
 </script>
 <template>
@@ -35,6 +35,8 @@ const { copy, feedback } = useClipboard()
           v-if="message.content"
           :content="message.content"
           :streaming="message.status === 'streaming'"
+          :sources="message.result?.source_map"
+          @citation="message.run_id && $emit('inspect', message.run_id, $event)"
         />
         <div v-else-if="message.status === 'submitting'" class="thinking-indicator" role="status">
           <span></span><span></span><span></span><small>正在理解问题、选择处理路径…</small>
@@ -66,9 +68,13 @@ const { copy, feedback } = useClipboard()
           >
             <AppIcon name="pulse" :size="15" />执行详情<AppIcon name="right" :size="12" />
           </button>
-          <span v-if="message.result?.source_map?.length" class="source-count"
-            ><AppIcon name="book" :size="13" />{{ message.result.source_map.length }} 个来源</span
+          <button
+            v-if="message.result?.source_map?.length && message.run_id"
+            class="source-count text-button"
+            @click="$emit('inspect', message.run_id, message.result.source_map[0]?.citation_id)"
           >
+            <AppIcon name="book" :size="13" />{{ message.result.source_map.length }} 个来源
+          </button>
         </div>
       </template>
     </div>

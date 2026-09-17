@@ -10,10 +10,10 @@
 
 技术栈：Vue 3、TypeScript、Vite、Pinia、Vue Router、Element Plus、SCSS、Fetch SSE、markdown-it、DOMPurify、highlight.js；FastAPI、AsyncOpenAI、SQLite、Chroma；Vitest、Vue Test Utils、Playwright、GitHub Actions。
 
-- 基于 Vue 3、TypeScript 与 Element Plus 实现问答、供应商管理及运行分析工作台，统一浅深主题和窄屏布局；实现动态模型表单、连接检测、能力配置及默认模型切换，区分凭据配置、接口连接与生成成功状态。
+- 基于 Vue 3、TypeScript 与 Element Plus 完善问答、供应商管理和运行分析工作台，建立主题变量及业务组件分层；实现动态模型表单、字段级校验与错误定位，区分凭据配置、模型列表连通与生成验证状态。
 - 使用 POST Fetch SSE 消费供应方真实增量，通过 UTF-8 分块解码、事件重组、session/run 身份校验及 60ms 批量更新，处理断流恢复、会话竞争和 Critic 多轮草稿替换。
 - 以 Pinia 管理会话与运行状态，结合 AbortController 和后端任务取消，处理重复提交、后台会话执行、完成与取消竞争，失败时恢复输入且不自动重放请求。
-- 将后端真实节点事件映射为可选择的耗时瀑布，支持服务端分页筛选、节点输入输出与工具详情、证据来源回看及单轮 JSON 导出；配合 SQLite 事务恢复最终回答和元数据，以少量核心冒烟验证流程。
+- 将真实运行事件映射为可选择的耗时瀑布，实现分页筛选、节点详情、窄屏列表/详情导航和单轮导出；基于后端明确的引用编号，实现回答到证据的定位，配合 SQLite 恢复最终回答与元数据。
 
 不写用户量、并发量、准确率、商业上线经历或性能提升百分比。GitHub Actions 当前可写“配置工作流”，未推送运行前不能写“云端流水线通过”。真实联调范围以 `verification.md` 为准，不把测试夹具耗时当作模型性能。
 
@@ -21,18 +21,25 @@
 
 | 亮点 | 代码入口 | 操作路径 | 验证证据 |
 | --- | --- | --- | --- |
-| 组件与页面设计 | `frontend/src/components/`、`views/`、`styles/main.scss` | `/chat`、`/tools`、`/system`，切换窄屏和主题 | `tests/browser/workbench.spec.ts`、`docs/screenshots/real-*.png` |
+| 组件与页面设计 | `frontend/src/components/`、`views/`、`styles/_tokens.scss` | `/chat`、`/providers`，切换窄屏和主题 | `tests/browser/workbench.spec.ts`、`docs/screenshots/workspace-*.png` |
 | SSE 协议与终态 | `frontend/src/api/sse.ts`、`stores/workbench.ts`、`src/models/client.py` | 发起真实问答，观察增量，停止或刷新 | `frontend/tests/unit/core.test.ts`、`tests/test_workbench_smoke.py`、真实联调 metrics |
 | 会话与异步隔离 | `stores/workbench.ts`、`src/api/workbench.py` | 运行时切换会话，回到原会话停止，手动重试 | Vitest 竞态用例、Playwright 取消重试和恢复 |
 | 可追踪运行与存储 | `ExecutionPanel.vue`、`src/utils/execution.py`、`src/memory/sqlite_memory.py` | 回答下方执行详情，切换来源/工具，刷新回看 | SQLite 迁移/取消后重试测试、历史一致性验证 |
-| 可操作的供应商配置 | `views/ProvidersView.vue`、`api/settings.ts`、`src/api/providers.py` | `/providers` 添加/编辑、检查连接、设默认 | `test_provider_settings.py`、Playwright 表单冒烟、新供应商真实问答 |
-| 运行分析交互 | `views/RunsView.vue`、`composables/useRunAnalysis.ts` | `/runs` 搜索、选择节点、证据、导出、回到会话 | `workspace-runs.png`、`workspace-evidence.png`、`workspace-metrics.json` |
+| 可操作的供应商配置 | `components/providers/`、`views/ProvidersView.vue`、`api/client.ts` | `/providers` 校验/编辑、检查连接、设默认 | Playwright 表单保留/失败反馈；既有 Python 凭据检查与上一轮真实问答 |
+| 运行分析交互 | `components/runs/`、`views/RunsView.vue`、`composables/useRunAnalysis.ts` | `/runs` 搜索、节点选择、窄屏返回、导出 | `workspace-runs.png`、`workspace-runs-mobile.png`、Playwright |
+| 回答与证据关联 | `MarkdownContent.vue`、`MessageBubble.vue`、`ExecutionPanel.vue` | 点击最终回答中的 `[S1]`，聚焦对应证据 | Vitest 安全引用用例、真实历史 `workspace-citation.png`、`workspace-metrics.json` |
 
 ## 面试讲解
 
 **为什么选这些技术？** Vue 3/TS 对应岗位与复杂交互；Pinia 管共享业务状态，Router 做页面懒加载。Element Plus 提供表单、选择器、开关和弹窗，业务配置映射和异步逻辑由项目实现。CSS 即可实现真实耗时瀑布，无需 Vue Flow 或工作流编辑。沿用 npm 锁文件，避免迁移包管理器带来额外成本。
 
 **组件怎么拆？** App 负责导航和连接初始化；ChatView 负责布局和滚动；Composer 管文件读取与输入；MessageBubble 管一条消息；MarkdownContent 管安全渲染；ExecutionPanel 聚合一次运行。API 适配不放组件。
+
+本轮继续按职责拆分：ProviderForm 管草稿、校验和保存生命周期，ProviderModelEditor 只接收模型字段并发出移除事件；RunWaterfall 接收真实节点与选择状态，RunNodeDetail 展示节点记录。页面保留请求和导航，不按组件行数机械拆分。
+
+**如何处理表单失败？** Fetch 层将 422 转成带字段路径的 ApiError；只使用安全校验消息，避免回显凭据。前端先校验 URL、重复模型和数值范围，后端仍是最终校验者。错误摘要聚焦并链接字段，失败保留草稿；保存和列表刷新分别反馈。连接检查返回 HTTP 200 仍可能 `ok:false`，必须按业务结果显示。
+
+**如何保证引用不造假？** 只匹配后端传入 source_map 中的明确 `[Sx]` 标记；Markdown 行内解析跳过代码和原有链接。点击将该消息的 run_id 与来源 ID 交给详情区域，不拿当前最新运行替代。旧来源列表没有对应关系时不生成点击映射。
 
 **Pinia 管什么？** 模型/处理模式、会话列表、每会话草稿、消息、事件和 activeRun。搜索词、详情 tab、导航展开属于局部状态。AbortController 和计时器放非响应式 Map；busy、当前消息和来源通过 computed 派生。
 

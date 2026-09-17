@@ -1,5 +1,5 @@
 {
-  "date": "2026-09-17T17:25:27.885Z",
+  "date": "2026-09-17T18:28:04.738Z",
   "errors": [],
   "mockedResponses": false,
   "viewports": [
@@ -17,15 +17,28 @@
       "path": "runs",
       "width": 390,
       "overflow": false
+    },
+    {
+      "path": "empty-chat",
+      "width": 320,
+      "overflow": false
     }
   ],
-  "managedProviderQueryMs": 9005,
-  "managedProviderResult": {
-    "status": "success",
-    "profileIsManaged": true
+  "previousModelVerification": {
+    "date": "2026-09-17T17:25:27.885Z",
+    "managedProviderQueryMs": 9005,
+    "managedProviderResult": {
+      "status": "success",
+      "profileIsManaged": true
+    }
   },
+  "newModelRequest": false,
   "providerCheck": "模型列表接口连接成功；生成与图片能力仍以实际调用为准。",
+  "runCitationNavigation": true,
   "exportDownloaded": true,
+  "chatCitationNavigation": true,
   "historyAnswerVisible": true,
-  "screenshots": 12
+  "mobileFormFooterVisible": true,
+  "mobileListDetailNavigation": true,
+  "screenshots": 17
 }

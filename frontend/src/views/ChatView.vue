@@ -9,6 +9,8 @@ const ExecutionPanel = defineAsyncComponent(() => import('../components/Executio
 const store = useWorkbench()
 const scroller = ref<HTMLElement | null>(null)
 const showPanel = ref(false)
+const evidenceRequest = ref<{ id: string; sequence: number }>()
+const empty = computed(() => !store.current?.messages.length && !store.loadingSession)
 const contentKey = computed(
   () =>
     `${store.currentId}:${store.current?.messages.length}:${store.current?.messages.at(-1)?.content.length}:${store.current?.status}`,
@@ -17,6 +19,7 @@ const { following, onScroll, toBottom } = useAutoScroll(scroller, () => contentK
 watch(
   () => store.currentId,
   () => {
+    evidenceRequest.value = undefined
     void toBottom()
   },
 )
@@ -46,14 +49,22 @@ const prompts = [
     text: '你好，请介绍一下你能做什么',
   },
 ]
-function inspect(runId: string) {
+function inspect(runId: string, sourceId?: string) {
   store.selectedRun = runId
+  evidenceRequest.value = sourceId
+    ? { id: sourceId, sequence: (evidenceRequest.value?.sequence ?? 0) + 1 }
+    : undefined
   showPanel.value = true
+}
+function choosePrompt(text: string) {
+  if (!store.current) return
+  store.current.draft = text
+  scroller.value?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
 }
 </script>
 <template>
   <main class="chat-workspace">
-    <section class="conversation-pane">
+    <section class="conversation-pane" :class="{ 'is-empty': empty }">
       <div class="conversation-heading">
         <div>
           <span class="live-dot" :class="{ offline: !store.system }"></span
@@ -72,7 +83,6 @@ function inspect(runId: string) {
       <div ref="scroller" class="conversation-scroll" @scroll="onScroll">
         <div v-if="store.loadingSession" class="loading-session" role="status">正在恢复会话…</div>
         <div v-else-if="!store.current?.messages.length" class="welcome">
-          <div class="workspace-label"><span></span> YOUR RESEARCH SPACE</div>
           <h1>AgenticRAG<span>智能问答与检索</span></h1>
           <div class="welcome-model">
             <AppIcon name="server" :size="15" />{{ store.profile?.label || '尚未选择模型'
@@ -80,13 +90,19 @@ function inspect(runId: string) {
               store.profile?.configured ? '已配置' : '待配置'
             }}</span>
           </div>
-          <div class="suggestion-heading">开始探索 <span>01 — 04</span></div>
-          <div class="suggestion-grid">
+          <RouterLink
+            v-if="store.system && !store.profile?.configured"
+            class="configure-model secondary-button"
+            to="/providers"
+            ><AppIcon name="settings" :size="17" />配置可用模型</RouterLink
+          >
+          <ChatComposer />
+          <div class="suggestion-grid" aria-label="建议问题">
             <button
               v-for="prompt in prompts"
               :key="prompt.title"
               :disabled="!store.system || store.loading"
-              @click="store.current && (store.current.draft = prompt.text)"
+              @click="choosePrompt(prompt.text)"
             >
               <span class="suggestion-icon"><AppIcon :name="prompt.icon" :size="20" /></span
               ><strong>{{ prompt.title }}</strong>
@@ -121,10 +137,10 @@ function inspect(runId: string) {
       >
         <AppIcon name="down" :size="14" />回到底部
       </button>
-      <ChatComposer />
+      <ChatComposer v-if="!empty" />
     </section>
     <div v-if="showPanel" class="panel-container">
-      <ExecutionPanel @close="showPanel = false" />
+      <ExecutionPanel :evidence-request="evidenceRequest" @close="showPanel = false" />
     </div>
   </main>
 </template>

@@ -22,7 +22,7 @@ function dateLabel(timestamp: number) {
     <a class="brand" href="/chat" @click.prevent="$emit('newChat')"
       ><span class="brand-mark"><AppIcon name="branch" :size="25" /></span
       ><span
-        >Agentic<span class="brand-light">RAG</span><small>INTELLIGENCE WORKSPACE</small></span
+        >Agentic<span class="brand-light">RAG</span><small>智能问答与检索工作台</small></span
       ></a
     >
     <button class="new-chat-button" @click="$emit('newChat')">

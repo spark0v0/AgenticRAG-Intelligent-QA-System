@@ -1,12 +1,31 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import type { StageEvent, ToolEvent } from '../types'
 import AppIcon from './AppIcon.vue'
 import { sourceLabel } from '../composables/useRunAnalysis'
 defineEmits<{ close: [] }>()
+const props = defineProps<{ evidenceRequest?: { id: string; sequence: number } }>()
+const panel = ref<HTMLElement>()
 const store = useWorkbench()
 const tab = ref('trace')
+watch(
+  () => props.evidenceRequest,
+  async (request) => {
+    if (!request) {
+      tab.value = 'trace'
+      return
+    }
+    tab.value = 'sources'
+    await nextTick()
+    const target = [...(panel.value?.querySelectorAll<HTMLElement>('[data-source]') ?? [])].find(
+      (element) => element.dataset.source === request.id,
+    )
+    target?.scrollIntoView({ block: 'nearest' })
+    target?.focus({ preventScroll: true })
+  },
+  { immediate: true },
+)
 const labels: Record<string, string> = {
   router: '意图路由',
   planner: '任务规划',
@@ -70,7 +89,7 @@ function format(value: unknown) {
 }
 </script>
 <template>
-  <aside class="execution-panel">
+  <aside ref="panel" class="execution-panel">
     <div class="panel-heading">
       <div><AppIcon name="pulse" :size="18" /><strong>执行详情</strong></div>
       <button
@@ -93,8 +112,7 @@ function format(value: unknown) {
           :to="{ path: '/runs', query: { run: store.selectedMessage.run_id } }"
           ><AppIcon name="diagonal" :size="15" />打开运行分析</RouterLink
         >
-        <span class="eyebrow">EXECUTION RECORD</span
-        ><strong>{{
+        <strong>{{
           result?.routing?.route === 'planning'
             ? '规划分析'
             : result?.routing?.route === 'retrieval'
@@ -191,7 +209,13 @@ function format(value: unknown) {
           ><p v-if="!sources.length" class="empty-hint">
             本轮没有引用来源。直接回答或旧记录可能没有来源信息。
           </p>
-          <article v-for="source in sources" :key="source.citation_id" class="source-card">
+          <article
+            v-for="source in sources"
+            :key="source.citation_id"
+            class="source-card"
+            :data-source="source.citation_id"
+            tabindex="-1"
+          >
             <div>
               <span class="citation-id">{{ source.citation_id }}</span
               ><AppIcon name="book" :size="16" />

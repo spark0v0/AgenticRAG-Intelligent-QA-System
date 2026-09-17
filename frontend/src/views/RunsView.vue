@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { requestJson } from '../api/client'
 import { useWorkbench } from '../stores/workbench'
 import {
   useRunAnalysis,
-  nodeLabels,
   runLabels,
   durationLabel,
   sourceLabel,
@@ -13,6 +12,8 @@ import {
 } from '../composables/useRunAnalysis'
 import type { RunDetail, RunRecord } from '../types'
 import AppIcon from '../components/AppIcon.vue'
+import RunWaterfall from '../components/runs/RunWaterfall.vue'
+import RunNodeDetail from '../components/runs/RunNodeDetail.vue'
 const MarkdownContent = defineAsyncComponent(() => import('../components/MarkdownContent.vue'))
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +28,9 @@ const loading = ref(false)
 const run = ref<RunDetail>()
 const selectedStage = ref('')
 const tab = ref('trace')
+const mobileDetail = ref(typeof route.query.run === 'string')
+const detailRoot = ref<HTMLElement>()
+const detailLoading = ref(false)
 const { stages, tools, sources, duration, span, bar } = useRunAnalysis(run)
 const stage = computed(
   () => stages.value.find((e) => e.data.stage_id === selectedStage.value) ?? stages.value[0],
@@ -57,10 +61,10 @@ async function loadList() {
       `/runs?${new URLSearchParams({ search: search.value, status: status.value, offset: String(page.value * 20), limit: '20' })}`,
       { signal: listController.signal },
     )
-    if (version !== listVersion) return
+    if (disposed || version !== listVersion) return
     items.value = result.items
     total.value = result.total
-    if (!route.query.run && items.value[0])
+    if (!route.query.run && items.value[0] && !window.matchMedia('(max-width: 1000px)').matches)
       await router.replace({ query: { run: items.value[0].id } })
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError') && version === listVersion)
@@ -75,6 +79,7 @@ async function loadDetail(id: string, background = false) {
   const version = ++detailVersion
   clearTimeout(poll)
   if (!background) {
+    detailLoading.value = true
     run.value = undefined
     selectedStage.value = ''
     error.value = ''
@@ -90,19 +95,34 @@ async function loadDetail(id: string, background = false) {
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError') && version === detailVersion)
       error.value = e instanceof Error ? e.message : '读取失败'
+  } finally {
+    if (!disposed && version === detailVersion) detailLoading.value = false
   }
 }
 watch(
   () => route.query.run,
   (id) => {
-    if (typeof id === 'string') void loadDetail(id)
+    if (typeof id === 'string') {
+      mobileDetail.value = true
+      void loadDetail(id)
+    } else {
+      detailVersion++
+      detailController?.abort()
+      clearTimeout(poll)
+      run.value = undefined
+      mobileDetail.value = false
+    }
   },
   { immediate: true },
 )
 watch([search, status], () => {
-  page.value = 0
   clearTimeout(debounce)
-  debounce = setTimeout(() => void loadList(), 250)
+  listController?.abort()
+  listVersion++
+  debounce = setTimeout(() => {
+    if (page.value === 0) void loadList()
+    else page.value = 0
+  }, 250)
 })
 watch(page, () => void loadList())
 onMounted(loadList)
@@ -115,6 +135,27 @@ onUnmounted(() => {
   listController?.abort()
   detailController?.abort()
 })
+async function selectRun(id: string) {
+  mobileDetail.value = true
+  if (route.query.run !== id) await router.replace({ query: { ...route.query, run: id } })
+  await nextTick()
+  detailRoot.value?.focus({ preventScroll: true })
+  detailRoot.value?.scrollIntoView({ block: 'start' })
+}
+async function backToList() {
+  mobileDetail.value = false
+  await nextTick()
+  document.querySelector<HTMLElement>('.run-index-item.selected')?.focus()
+}
+async function showCitation(id: string) {
+  tab.value = 'sources'
+  await nextTick()
+  const target = [...(detailRoot.value?.querySelectorAll<HTMLElement>('[data-source]') ?? [])].find(
+    (element) => element.dataset.source === id,
+  )
+  target?.scrollIntoView({ block: 'nearest' })
+  target?.focus({ preventScroll: true })
+}
 function time(value: number) {
   return new Date(value * 1000).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -149,16 +190,14 @@ function refresh() {
   <main class="runs-page">
     <div class="page-title">
       <div>
-        <span class="eyebrow">OBSERVABILITY</span>
-        <h1>运行分析<span class="heading-dot coral"></span></h1>
-        <p>从一次提问，到每一步执行。</p>
+        <h1>运行分析</h1>
       </div>
       <button class="secondary-button" :disabled="loading" @click="refresh">
         <AppIcon name="refresh" :size="16" />刷新
       </button>
     </div>
     <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
-    <div class="runs-layout">
+    <div class="runs-layout" :class="{ 'show-detail': mobileDetail }">
       <section class="runs-index" aria-label="运行列表">
         <label class="search-field"
           ><AppIcon name="search" :size="16" /><input
@@ -187,7 +226,7 @@ function refresh() {
             :key="item.id"
             class="run-index-item"
             :class="{ selected: route.query.run === item.id }"
-            @click="router.replace({ query: { run: item.id } })"
+            @click="selectRun(item.id)"
           >
             <span class="run-index-meta"
               ><span class="status-indicator" :class="item.status"></span>{{ runLabels[item.status]
@@ -221,7 +260,10 @@ function refresh() {
           </button>
         </footer>
       </section>
-      <section v-if="run" class="run-detail">
+      <section v-if="run" ref="detailRoot" class="run-detail" tabindex="-1">
+        <button class="text-action runs-back" @click="backToList">
+          <AppIcon name="right" :size="16" class="rotate-back" />返回运行列表
+        </button>
         <header class="run-detail-heading">
           <span
             class="status-badge"
@@ -279,76 +321,23 @@ function refresh() {
           </button>
         </div>
         <div v-if="tab === 'trace'" class="analysis-content">
-          <div class="waterfall-heading">
-            <span>节点 / 轮次</span
-            ><span
-              >0<span>{{ durationLabel(span) }}</span></span
-            ><span>耗时</span>
-          </div>
-          <div class="waterfall">
-            <button
-              v-for="event in stages"
-              :key="event.data.stage_id"
-              class="waterfall-row"
-              :class="{ selected: stage?.data.stage_id === event.data.stage_id }"
-              @click="selectedStage = event.data.stage_id"
-            >
-              <span class="waterfall-node"
-                ><i class="status-indicator" :class="event.data.status"></i
-                ><span
-                  >{{ nodeLabels[event.data.node] || event.data.node
-                  }}<small>{{ event.data.node }} · {{ event.data.round }}</small></span
-                ></span
-              ><span class="waterfall-track"
-                ><i :class="event.data.node" :style="bar(event)"></i></span
-              ><span class="waterfall-time">{{ durationLabel(event.data.duration_ms) }}</span>
-            </button>
-          </div>
-          <p v-if="!stages.length" class="empty-hint">该记录尚无节点数据。</p>
-          <section v-if="stage" class="node-inspector">
-            <header>
-              <span class="node-icon"><AppIcon name="branch" :size="19" /></span>
-              <div>
-                <h3>{{ nodeLabels[stage.data.node] || stage.data.node }}</h3>
-                <span
-                  >第 {{ stage.data.round }} 轮 ·
-                  {{ runLabels[stage.data.status] || stage.data.status }}</span
-                >
-              </div>
-              <span class="subtle-badge">{{ durationLabel(stage.data.duration_ms) }}</span>
-            </header>
-            <div class="node-io">
-              <div>
-                <span class="tiny-label">INPUT / 输入摘要</span>
-                <p>{{ stage.data.input || '未记录' }}</p>
-              </div>
-              <div>
-                <span class="tiny-label">OUTPUT / 输出摘要</span>
-                <p>{{ stage.data.output || '暂无输出' }}</p>
-              </div>
-            </div>
-            <details v-if="stage.data.metadata" class="raw-details">
-              <summary>结构化节点数据</summary>
-              <pre>{{ JSON.stringify(stage.data.metadata, null, 2) }}</pre>
-            </details>
-            <div v-if="stageTools.length" class="node-tools">
-              <span class="tiny-label">节点期间的工具调用</span>
-              <details v-for="tool in stageTools" :key="tool.data.call_id" class="tool-call">
-                <summary>
-                  <AppIcon name="tool" :size="15" /><strong>{{ tool.data.tool }}</strong
-                  ><span>{{ runLabels[tool.data.status] || tool.data.status }}</span>
-                </summary>
-                <small>{{ tool.data.protocol }} · {{ durationLabel(tool.data.duration_ms) }}</small>
-                <p v-if="tool.data.error" class="inline-error">{{ tool.data.error }}</p>
-                <pre>{{
-                  JSON.stringify({ input: tool.data.input, output: tool.data.output }, null, 2)
-                }}</pre>
-              </details>
-            </div>
-          </section>
+          <RunWaterfall
+            :stages="stages"
+            :selected="stage?.data.stage_id"
+            :span="span"
+            :bar="bar"
+            @select="selectedStage = $event"
+          />
+          <RunNodeDetail v-if="stage" :stage="stage" :tools="stageTools" />
         </div>
         <div v-else-if="tab === 'sources'" class="analysis-content evidence-grid">
-          <article v-for="source in sources" :key="source.citation_id" class="evidence-item">
+          <article
+            v-for="source in sources"
+            :key="source.citation_id"
+            class="evidence-item"
+            :data-source="source.citation_id"
+            tabindex="-1"
+          >
             <header>
               <span class="citation-id">{{ source.citation_id }}</span
               ><AppIcon name="book" :size="17" />
@@ -371,6 +360,8 @@ function refresh() {
             v-if="run.result?.answer"
             :content="run.result.answer"
             :streaming="false"
+            :sources="run.result.source_map"
+            @citation="showCitation"
           />
           <p v-else class="empty-hint">本轮尚未保存回答。</p>
           <div v-if="run.result?.critic_feedback" class="assessment">
@@ -379,9 +370,22 @@ function refresh() {
           </div>
         </div>
       </section>
-      <section v-else class="run-detail run-empty">
+      <section v-else ref="detailRoot" class="run-detail run-empty" tabindex="-1">
+        <button class="text-action runs-back" @click="backToList">
+          <AppIcon name="right" :size="16" class="rotate-back" />返回运行列表
+        </button>
         <AppIcon name="branch" :size="40" />
-        <h2>{{ route.query.run ? '正在读取运行记录' : '暂无运行记录' }}</h2>
+        <h2>
+          {{
+            detailLoading
+              ? '正在读取运行记录'
+              : error
+                ? '运行记录读取失败'
+                : items.length
+                  ? '选择一条运行查看详情'
+                  : '暂无运行记录'
+          }}
+        </h2>
         <RouterLink class="secondary-button" to="/chat"
           >前往问答<AppIcon name="right" :size="15"
         /></RouterLink>

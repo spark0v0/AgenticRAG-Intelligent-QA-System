@@ -84,6 +84,8 @@ $env:PYTHONPATH='src'
 
 ## 生产与安全边界
 
+2026-09-18 前端完善未变更后端 API 或数据库结构，无需新的数据迁移。前端引用跳转复用 Generator 已有 `source_map[].citation_id` 与 `[Sx]` 约定，不持久化额外推断关系。供应商 422 校验复用 `detail[].loc/type/msg`，客户端只接受安全消息并保留字段路径；连接检查 HTTP 成功不代表业务成功，仍须判断 `ok`。
+
 FastAPI 同源提供 SPA 与 API，无需跨域白名单。构建后启动服务，GET 已知前端路径返回 index；未知路径 404。默认 127.0.0.1，单 worker。若外接反向代理，关闭 SSE 响应缓冲，保持长连接超时；不需要 Nginx 才能本机运行。
 
 `/providers` 是 SPA 页面。`/runs` 和 `/tools` 同时兼容 HTML 页面和旧 JSON 路由，`/api/runs`、`/api/tools` 始终为 API。供应商管理仅接受本机来源和本机 Host，写操作必须包含 `X-Workbench-Request: 1`，拒绝外站 Origin；这用于本机工作台的跨站防护，**不是公网身份认证**。API 参数错误不返回 Pydantic 原始 input，防止回显输入 Key。

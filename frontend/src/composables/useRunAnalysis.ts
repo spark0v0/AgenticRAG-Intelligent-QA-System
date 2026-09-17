@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import type { RunDetail, StageEvent, ToolEvent } from '../types'
+import type { RunDetail, Source, StageEvent, ToolEvent } from '../types'
 
 export const nodeLabels: Record<string, string> = {
   router: '意图路由',
@@ -30,49 +30,57 @@ export function useRunAnalysis(run: Ref<RunDetail | undefined>) {
     })
     return [...latest.values()]
   })
-  const sources = computed(
+  const sources = computed<Source[]>(
     () =>
       run.value?.result?.source_map ??
       run.value?.events.findLast((e) => e.type === 'sources')?.data.items ??
+      run.value?.result?.sources?.map((source, index) => ({
+        source,
+        citation_id: `来源 ${index + 1}`,
+      })) ??
       [],
   )
   const duration = computed(() =>
     run.value?.finished_at ? (run.value.finished_at - run.value.started_at) * 1000 : undefined,
   )
-  const span = computed(() =>
-    Math.max(
-      1,
-      duration.value ??
-        Math.max(
-          0,
-          ...stages.value.map(
-            (e) =>
-              ((e.data.finished_at ?? e.data.started_at) - (run.value?.started_at ?? 0)) * 1000,
-          ),
-        ),
-    ),
-  )
+  const span = computed(() => {
+    if (duration.value != null) return duration.value
+    if (run.value?.started_at == null) return undefined
+    const ends = stages.value
+      .map((e) => e.data.finished_at)
+      .filter((end): end is number => end != null)
+    return ends.length ? Math.max(0, (Math.max(...ends) - run.value.started_at) * 1000) : undefined
+  })
   function bar(event: StageEvent) {
     const left = Math.min(
       99,
       Math.max(
         0,
-        (((event.data.started_at - (run.value?.started_at ?? 0)) * 1000) / span.value) * 100,
+        (((event.data.started_at - (run.value?.started_at ?? 0)) * 1000) /
+          Math.max(1, span.value ?? 0)) *
+          100,
       ),
     )
     return {
       left: `${left}%`,
-      width: `${Math.min(100 - left, Math.max(0.6, ((event.data.duration_ms ?? 0) / span.value) * 100))}%`,
+      width: `${Math.min(100 - left, Math.max(0.6, ((event.data.duration_ms ?? 0) / Math.max(1, span.value ?? 0)) * 100))}%`,
     }
   }
   return { stages, tools, sources, duration, span, bar }
 }
 export function durationLabel(value?: number) {
   return value == null
-    ? '进行中'
+    ? '未记录'
     : value < 1000
       ? `${value.toFixed(0)} ms`
       : `${(value / 1000).toFixed(2)} s`
+}
+export function timestampLabel(value?: number) {
+  if (value == null) return '未记录'
+  return (
+    new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) +
+    `.${String(Math.floor((value % 1) * 1000)).padStart(3, '0')}`
+  )
 }
 export function sourceLabel(value: string) {
   return /^[a-z]:[\\/]/i.test(value) ? value.split(/[\\/]/).at(-1) || value : value

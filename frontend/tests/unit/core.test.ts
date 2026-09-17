@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { readEvents } from '../../src/api/sse'
-import { api } from '../../src/api/client'
+import { api, checked, ApiError } from '../../src/api/client'
 import { useWorkbench } from '../../src/stores/workbench'
 import MarkdownContent from '../../src/components/MarkdownContent.vue'
 import type { ExecutionEvent, SystemStatus } from '../../src/types'
@@ -88,6 +88,23 @@ function setupStore() {
   vi.spyOn(api, 'sessions').mockResolvedValue({ items: [] })
   return store
 }
+
+it('links only backend citations outside code and existing links', async () => {
+  const wrapper = mount(MarkdownContent, { props: { content: '证据 [S1]，未知 [S9]。`[S1]`\n\n[链接 [S1]](https://example.com)\n\n```text\n[S1]\n```', sources: [{ citation_id: 'S1', source: 'doc' }] } })
+  expect(wrapper.findAll('.citation-link')).toHaveLength(1)
+  await wrapper.get('.citation-link').trigger('click')
+  expect(wrapper.emitted('citation')).toEqual([['S1']])
+  expect(wrapper.find('code').text()).toContain('[S1]')
+  wrapper.unmount()
+})
+
+it('preserves field paths without echoing validation input or sensitive messages', async () => {
+  const response = new Response(JSON.stringify({ detail: [{ loc: ['body', 'models', 0, 'model_name'], type: 'string_pattern_mismatch', msg: 'secret-fixture', input: 'secret-fixture' }, { loc: ['body', 'api_key'], type: 'value_error', msg: 'secret-fixture' }] }), { status: 422 })
+  const error = await checked(response).catch((cause: unknown) => cause)
+  expect(error).toBeInstanceOf(ApiError)
+  expect(error).toMatchObject({ issues: [{ field: 'models.0.model_name', message: '格式不正确，请勿包含空格' }, { field: 'api_key', message: '凭据格式或长度不符合要求' }] })
+  expect(JSON.stringify(error)).not.toContain('secret-fixture')
+})
 
 it('isolates a running conversation and replaces revision drafts with one final answer', async () => {
   const store = setupStore()

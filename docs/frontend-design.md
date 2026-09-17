@@ -2,7 +2,7 @@
 
 ## 核实结论
 
-本轮开始时工作区已经有大量未提交修改，包括 `frontend/`、`api/workbench.py`、`memory/sqlite_memory.py`、`utils/execution.py`。这些代码被保留并继续完善，没有 reset 或删除用户数据。最初“只有 dashboard.html、轨迹只在内存”的观察适用于更早版本，不能作为本轮初始状态。
+最初迁移时工作区已有 `frontend/`、`api/workbench.py`、`memory/sqlite_memory.py`、`utils/execution.py`，均被保留。本次前端完善从新仓库干净的 `efaa631` 开始，Vue、SSE、SQLite、供应商管理与运行分析已经存在。原 `E:\LangChain_Dify_1` 仅作参考，没有修改其配置或数据。
 
 已实现的业务基础：路由、规划、工具检索、生成、规则评审；本地 HashEmbeddings + Chroma + 词法混合检索；工具注册、示例 stdio MCP、LangChain Runnable 适配。规则评分不是准确率；知识图谱来自配置。Dify 是 Python 包装，未发布插件。
 
@@ -45,7 +45,11 @@ frontend/src/
   views/ChatView.vue            问答布局、详情展开、滚动容器
   views/ToolsView.vue           只读工具 schema 与筛选
   views/SystemView.vue          只读模型能力和环境信息
-  views/ProvidersView.vue       供应商表单、模型发现、能力声明与默认选择
+  components/providers/ProviderForm.vue  表单草稿、校验、保存与密钥清理
+  components/providers/ProviderModelEditor.vue  模型字段、能力开关和移除事件
+  components/runs/RunWaterfall.vue  节点选择、悬停摘要与耗时投影
+  components/runs/RunNodeDetail.vue  节点起止、输入输出与期间工具
+  views/ProvidersView.vue       供应商列表、发现、连接结果与默认选择
   views/RunsView.vue            分页运行索引、瀑布选择、证据、回答与导出
   router/ styles/
 ```
@@ -86,7 +90,9 @@ Markdown 禁用原始 HTML，再经 DOMPurify 净化；禁止远程图片/iframe
 
 ## 本轮界面完善
 
-采用炭黑导航、白色工作区、钴蓝主操作；检索节点使用青色、评审使用珊瑚色，成功/失败有独立状态色。字体优先微软雅黑/PingFang，避免外部字体请求；字号固定，正文 14～16px，页面标题 23～27px。CSS 变量维护浅色/深色主题，Element Plus 组件使用同一主色。侧栏固定宽度、输入区停靠、消息限制阅读宽度；窄屏导航收起，运行索引转为可横向滚动的列表。新增设计样式集中在 `styles/workspace.scss`，原有消息/Markdown/详情基础样式仍在 `main.scss`。
+采用炭黑导航、白色工作区、钴蓝主操作；检索节点使用青色、评审使用珊瑚色，成功/失败有独立状态色。字体优先微软雅黑/PingFang，避免外部字体请求；字号固定，正文 14～16px，辅助文字至少 12px。空会话将输入框置于建议问题之前，点击建议填入草稿并聚焦；进入对话后停靠底部。消息宽度受限，窄屏工具栏分两行，保证发送按钮可见。
+
+`styles/main.scss` 只组织导入；`_tokens.scss` 定义亮暗色语义变量及 Element Plus 映射，`_base.scss` 管基础控件，`_shell.scss` 管导航，`_chat.scss`、`_providers.scss`、`_runs.scss`、`_catalog.scss` 管业务样式。已合并相同选择器与断点内的重复声明，移除旧 `workspace.scss`；修改直接回到所属模块，不新增覆盖文件。图标统一使用 Lucide，手机端主要操作目标为 44px。主题对文字、输入边框、错误背景和按钮前景分别定义，避免深色主题仍套用浅色按钮文字。
 
 没有新增 UI 框架或图编辑依赖。Element Plus 负责成熟表单与弹窗的基础交互，业务组件负责配置映射、错误恢复与提交状态。常用问题只填入草稿。供应商检测仅请求模型列表，`check_ok` 不等于生成成功；系统页 `connection_verified` 仍只来自本次进程中完成的真实回答。
 
@@ -94,6 +100,14 @@ Markdown 禁用原始 HTML，再经 DOMPurify 净化；禁止远程图片/iframe
 
 供应商数据和表单草稿属于页面局部状态，不进入 Pinia/localStorage。Key 仅停留在表单内存与保存请求中，保存/关闭后清空；已保存 Key 只返回 has_key。后端更改配置后刷新共享模型列表，不重建正在运行的问答系统。每个运行仍使用已经捕获的配置字典；旧配置的回答成功不会把新配置误标为已验证。
 
+ProviderForm 拥有独立保存状态与 AbortController；ElForm 处理 URL、模型 ID、重复模型和数值字段校验。`ApiError` 保留 HTTP 状态、字段路径和安全消息，不渲染 Pydantic input/ctx 或任意可能包含凭据的校验消息。保存失败保留输入，错误摘要可聚焦对应字段；留空保留 Key，与清除开关互斥。供应商列表读取有独立版本号，离页中止请求并阻止旧响应更新；中断保存只代表浏览器结束等待，不能证明服务器没有提交，因此不会自动重放。
+
+连接检查必须判断响应 `ok`，失败走错误提示并清空上一次发现的模型。`has_key`、持久化 `check_ok`（模型列表接口）与 `connection_verified`（当前后端进程完成过真实生成）分别展示；后端重启后生成验证状态可能恢复为未验证，历史回答仍保留。
+
 运行分析通过 `/runs` 分页查询摘要，通过 `/runs/{id}` 获取单轮详情；URL query 保存所选 run，支持刷新和从消息跳转。搜索防抖 250ms；列表和详情各有 AbortController/版本号，旧响应不能覆盖新选择。进行中的选中运行每 2 秒刷新，离页清理轮询和连接。瀑布位置来自真实 started_at，条长来自 duration_ms；小于一个像素的节点设最小可见宽度，数字耗时仍是真实值。未结束节点不估造耗时，视图不重放 token。
 
-来源展示后端证据，不推断句子级引用。节点期间的工具通过时间区间归属，只称「节点期间的工具调用」，不捏造父子 ID。导出是单轮已脱敏服务端记录，仍包含问题、回答和证据，需自行确认是否适合分享。
+窄屏进入 `/runs` 先显示列表；选择记录或直接带 run 参数访问才展开详情。返回列表保留当前组件中的搜索、分页、筛选和选择，并将键盘焦点还给选中记录。刷新后保留 URL 中的 run；筛选条件不跨离页持久化。没有结束时间或耗时的记录显示「未记录」，不会以浏览器计时替代后端数据。
+
+来源展示后端证据。Generator 已为模型提供 `source_map` 与 `[S1]` 引用约定，本次只将回答里明确出现、且存在于最终 source_map 的编号渲染为按钮。使用 markdown-it 行内规则处理，跳过代码与已有链接；DOMPurify 仍在渲染后净化。点击后传递所属 run_id/source_id，展开来源、滚动并聚焦证据。旧记录无映射时保持普通文本和独立来源列表，不根据句子或数组下标猜测归属。流式草稿未取得最终映射时不提供引用跳转。
+
+节点期间的工具通过时间区间归属，只称「节点期间的工具调用」，不捏造父子 ID。导出是单轮已脱敏服务端记录，仍包含问题、回答和证据，需自行确认是否适合分享。
