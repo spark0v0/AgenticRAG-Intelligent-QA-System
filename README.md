@@ -2,7 +2,7 @@
 
 Vue 3 中文 AI 工作台，连接已有 Python/FastAPI AgenticRAG 执行链。提供多轮会话、图片附件、模型选择、真实 SSE 回答、停止生成、来源和工具详情、执行时间线与历史恢复。产品仅保留真实业务路径；没有凭据或调用失败时显示错误，不生成模拟成功回答。
 
-![运行分析](docs/screenshots/workspace-runs.png)
+![未配置的工作台](docs/screenshots/clean-chat-1440.png)
 
 新增可写入的模型供应商管理与独立运行分析：添加兼容供应商、保存本机凭据、发现模型、设置默认模型；按运行检索、查看真实耗时瀑布、证据及最终回答，并导出 JSON。Windows 新增凭据由当前用户 DPAPI 加密。界面使用 Element Plus 表单/弹窗/选择器与自定义业务布局，保留浅色和深色主题。
 
@@ -13,7 +13,7 @@ Vue 3 中文 AI 工作台，连接已有 Python/FastAPI AgenticRAG 执行链。�
 已验证环境：Windows / PowerShell、Node.js 24.19、npm 11.6、Python 3.13。使用现有 npm 锁文件，不混用 pnpm。前端要求 Node >=24.15；Python 直接依赖约束见 `requirements-verified.txt`，不是全量跨平台锁文件。
 
 ```powershell
-cd E:\AgenticRAG-Intelligent-QA-System
+# 在克隆后的项目根目录执行
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -c requirements-verified.txt
 cd frontend
@@ -28,7 +28,7 @@ cd ..
 开发时保持后端运行，在另一个 PowerShell 中执行：
 
 ```powershell
-cd E:\AgenticRAG-Intelligent-QA-System\frontend
+cd frontend
 npm run dev
 ```
 
@@ -47,13 +47,15 @@ npm run dev
 
 优先通过「模型供应商」配置，保存于 Git 忽略的 `data/settings/providers.sqlite3`。Windows 使用 DPAPI 当前用户加密，跨机器/用户迁移需重新填写 Key；其他系统使用权限为 0600 的本地文件，**不是加密存储**。编辑时空 Key 表示保留，清除需要显式打开开关。浏览器不缓存或回读 Key，网络请求仍会把用户刚输入的 Key 交给本机后端；不要分享开发者工具中的请求体。
 
-原 `config/config.yaml` 的 `model`、`model_profiles` 保持兼容，在页面作为只读文件配置展示；仍可通过后端 `.env`/环境变量提供其凭据。选择此方式时执行 `Copy-Item .env.example .env`。`AGENTICRAG_CONFIG` 可指定其他 YAML，`AGENTICRAG_SETTINGS` 可指定供应商库。不要使用 `VITE_*` 保存 Key。本仓库不分发本机凭据和会话数据库，未配置时如实提示。
+默认配置为空：没有预设个人模型档案、供应商凭据或历史记录。首次使用请在「模型供应商」重新添加服务、填写 Key 和模型 ID，保存并设为默认，然后回到问答页面选择该模型。
+
+`config/config.yaml` 的 `model`、`model_profiles` 保持兼容，在页面作为只读文件配置展示；仍可通过后端 `.env`/环境变量提供凭据。选择文件方式时执行 `Copy-Item .env.example .env`，并填写 YAML 中的模型名称。`AGENTICRAG_CONFIG` 可指定其他 YAML，`AGENTICRAG_SETTINGS` 可指定供应商库。不要使用 `VITE_*` 保存 Key。本仓库不分发本机凭据和会话数据库，未配置时如实提示。
 
 OpenAI/DeepSeek 使用 AsyncOpenAI 真实增量。`supports_streaming: false`、Ollama、Xinference 明确返回完整结果模式，阶段进度仍可见。问答失败不会自动重发，也不自动切换备用模型。原有规则路由和工具选择回退会在执行摘要中标识，不是模拟回答。Critic 是规则评审，修订可能产生额外模型调用。
 
 SQLite 保存真实会话、消息、运行和事件；Chroma 保留混合检索。`system.memory_path` 为 JSON 时，在同目录创建 SQLite 并幂等导入，原文件不修改。配置目录、测试目录、退役样例不进入知识索引。
 
-演示模式已退役：旧 `data/demo/`、`.cache/browser-demo/` 数据保留但应用不再读取；`mode=demo` 返回 422。浏览器旧模式键被移除，只迁移原 `rag-session-live` 指针到 `rag-session`。旧样例、旧截图的归档说明见 [接口与迁移](docs/api-and-storage.md)。
+演示模式已退役，`mode=demo` 返回 422。浏览器旧模式键被移除，只迁移原 `rag-session-live` 指针到 `rag-session`；对应会话不存在时创建空会话。本次隐私清理移除了当前项目本机供应商库、会话、索引、日志和旧截图，不保留这些文件的备份；截图仅展示未配置状态。该清理不改写 Git 历史、不撤销供应方 Key，也不操作其他项目或系统环境变量。
 
 ## 必要验证
 
@@ -75,7 +77,7 @@ cd ..
 
 ```powershell
 cd frontend
-$env:WORKBENCH_PYTHON='E:/AgenticRAG-Intelligent-QA-System/.venv/Scripts/python.exe'
+$env:WORKBENCH_PYTHON=(Resolve-Path ..\.venv\Scripts\python.exe).Path
 $env:PLAYWRIGHT_CHANNEL='chrome'
 npm run smoke:browser
 ```
@@ -93,4 +95,4 @@ npm run smoke:browser
 
 原生页面保留 `/legacy`，API 文档在 `/docs`。Router、Planner、Retriever、Generator、Critic、HashEmbeddings/Chroma 检索、配置式知识图谱及 LangChain Runnable 是已有业务基础。MCP 是示例服务，Dify 仅有包装代码，不能据此声称完整插件发布或商业上线。
 
-本仓库来自 [spark0v0/AgenticRAG](https://github.com/spark0v0/AgenticRAG) 的当前工作区改造版本，以独立初始提交发布，不携带旧仓库历史中的本地配置或数据。文档中提到的退役样例库、测试产物和本机缓存不随仓库分发。
+本仓库来自 [spark0v0/AgenticRAG](https://github.com/spark0v0/AgenticRAG) 的工作区改造版本，以独立初始提交发布。凭据、运行数据、测试产物和本机缓存被 Git 忽略。

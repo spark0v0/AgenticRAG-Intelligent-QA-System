@@ -96,7 +96,7 @@ FastAPI 同源提供 SPA 与 API，无需跨域白名单。构建后启动服务
 
 ## 演示模式退役
 
-不删除原数据：`data/demo/`、`.cache/browser-demo/` 原地保留，正常服务没有读取入口。旧 `docs/demo-knowledge.md`、`docs/ui-concepts/`、`docs/screenshots/workbench-*.png` 及旧 metrics 属于历史样例材料，不作当前产品证据。新截图使用 `real-` 前缀。`AGENTICRAG_DEMO_DATA` 不再生效。
+`AGENTICRAG_DEMO_DATA` 不再生效，正常服务没有演示数据读取入口。后续隐私清理已按用户要求删除当前项目的运行数据与旧截图；原项目不在清理范围。`docs/demo-knowledge.md`、`docs/ui-concepts/` 为通用历史样例说明，不作当前产品证据。新截图只展示未配置状态。
 
 浏览器启动只将 `rag-session-live` 迁移为 `rag-session`（已有新指针优先），移除 `rag-mode`、`rag-session-demo`、`rag-session-live`。不导入旧演示数据库。若用户曾自行将演示数据复制到真实库，系统无法可靠辨识其来源，不会擅自删记录。
 

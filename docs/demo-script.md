@@ -14,4 +14,4 @@
 
 备用路径：缺少凭据时展示未配置状态、只读工具/系统页和已有真实历史；网络失败时展示保留输入和手动重试，不宣称当前联调成功。Critic 可能再次生成，解释草稿重置属于新 generation，最终消息来自 completed。
 
-最新截图和验证范围见 `verification.md`。`screenshots/workspace-*.png` 为最新真实配置页面，`real-*` 是前一版本真实证据；`frontend/test-results/evidence/fixture-*.png` 仅供自动化测试，不能作为真实模型回答展示。
+最新验证范围见 `verification.md`。隐私清理后，仓库截图仅展示未配置状态，历史会话与原截图已移除。操作展示前请自行配置模型，用不含个人信息的问题重新运行上述流程。测试输出位于 Git 忽略的 `frontend/test-results/`，不能作为真实模型回答展示。

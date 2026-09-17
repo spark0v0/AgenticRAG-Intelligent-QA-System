@@ -1,10 +1,7 @@
 # 截图来源
 
-- `workspace-*.png`：最新前端完善的真实页面，生产服务 8005；`workspace-citation.png` 为引用定位，`workspace-runs-mobile.png` / `workspace-runs-list-mobile.png` 为手机端分屏导航，`workspace-provider-form-mobile.png` / `workspace-dark-form.png` 为表单。使用正常 API 和已有真实历史，没有注入模拟回答；Key 输入为空。
-- `workspace-metrics.json`：本轮截图、引用跳转、导出、窄屏检查的实际结果。`newModelRequest: false`；`previousModelVerification` 明确保留上一轮模型联调记录，不作为本轮新增调用。
+`clean-*.png` 是清理个人配置后的实际页面，使用正常 API，展示未配置模型、空供应商和空运行记录；不发送模型请求，不注入模拟回答。旧会话、供应商和测试截图已从当前版本移除。
 
-- `real-*.png`、`real-service-metrics.json`：当前真实配置页面与少量供应方联调，隔离会话存在 `.cache/real-service-smoke/`。成功/失败范围以 metrics 和 `../verification.md` 为准。
-- `workbench-desktop.png`、`workbench-mobile.png`、`smoke-metrics.json`、`history-metrics.json`：此前演示模式的历史材料，原地保留，不作为本轮验收证据。
-- 最新测试夹具截图及性能记录位于 `frontend/test-results/evidence/`，不会覆盖真实页面。
+`frontend/scripts/capture-workspace.mjs` 只允许对无供应商、无会话、无运行记录的工作台截图。默认输出到 Git 忽略的 `frontend/test-results/screenshots/`；需要发布时显式设置 `WORKBENCH_SCREENSHOT_DIR`，并在提交前检查图片。该检查不替代人工隐私审阅。
 
-人工联调先运行 `tests/serve_real_smoke.py`，再显式设置 `AGENTICRAG_REAL_SMOKE=1` 执行 `frontend/scripts/real-smoke.mjs`。它使用已有 DeepSeek 档案，最多发送一次完整检索问答和一次取消请求，可能消耗供应方配额；不自动重试或更换模型。测试存储和正常工作台存储隔离。
+`real-smoke.mjs` 的真实服务验证需显式授权，使用当前默认模型或 `WORKBENCH_MODEL_LABEL`，结果仅写入 Git 忽略的 `frontend/test-results/real-service/`。它可能消耗配额，本次清理没有执行。

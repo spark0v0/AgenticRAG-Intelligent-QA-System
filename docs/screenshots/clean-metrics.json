@@ -1,0 +1,37 @@
+{
+  "date": "2026-09-17T18:53:09.918Z",
+  "newModelRequest": false,
+  "errors": [],
+  "viewports": [
+    {
+      "path": "chat",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "providers",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "runs",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "chat",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "providers",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "runs",
+      "width": 390,
+      "overflow": false
+    }
+  ]
+}

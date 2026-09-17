@@ -1,47 +1,12 @@
 model:
-  provider: deepseek
-  model_name: deepseek-v4-pro
-  fallback_models:
-  - deepseek-v4-pro
-  temperature: 0.2
-  max_tokens: 1600
-  timeout_seconds: 60
-  base_url: https://api.deepseek.com
-  supports_vision: false
-model_profiles:
-- id: ollama_qwen_06b
-  label: Ollama Qwen3 0.6B (Local)
-  provider: ollama
-  model_name: qwen3:0.6b
-  fallback_models:
-  - qwen3:0.6b
-  temperature: 0.2
-  max_tokens: 1600
-  timeout_seconds: 120
-  supports_vision: false
-- id: deepseek_v4_pro
-  label: DeepSeek V4 Pro
-  provider: deepseek
-  model_name: deepseek-v4-pro
-  fallback_models:
-  - deepseek-v4-pro
-  temperature: 0.2
-  max_tokens: 1600
-  timeout_seconds: 60
-  base_url: https://api.deepseek.com
-  supports_vision: false
-- id: doubao_seed_vision
-  label: Doubao Seed 2.0 Pro Vision
   provider: openai
-  model_name: doubao-seed-2-0-pro-260215
-  fallback_models:
-  - doubao-seed-2-0-pro-260215
+  model_name: ''
+  fallback_models: []
   temperature: 0.2
   max_tokens: 1600
   timeout_seconds: 60
-  base_url: https://ark.cn-beijing.volces.com/api/v3
-  api_key_env: WINHUB_API_KEY
-  supports_vision: true
+  supports_vision: false
+model_profiles: []
 retrieval:
   knowledge_paths:
   - README.md
@@ -88,7 +53,7 @@ system:
   max_thinking_rounds: 5
   context_window_size: 4096
   enable_visualization: true
-  memory_path: data/memory/sessions.json
+  memory_path: data/memory/sessions.sqlite3
 router:
   simple_threshold: 0.35
   complex_threshold: 0.68

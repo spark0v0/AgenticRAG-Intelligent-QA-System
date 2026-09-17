@@ -1,149 +1,49 @@
-// Capture actual product state. Model calls require the explicit opt-in below.
-import { chromium, expect as baseExpect } from '@playwright/test'
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+// Only capture a clean workspace; never publish existing credentials or history.
+import { chromium, expect } from '@playwright/test'
+import { mkdirSync, writeFileSync } from 'node:fs'
 
 const baseURL = process.env.WORKBENCH_URL || 'http://127.0.0.1:8005'
-const expect = baseExpect.configure({ timeout: 30000 })
-const output = '../docs/screenshots'
-mkdirSync(output, { recursive: true })
-const browser = await chromium.launch({ channel: 'chrome' })
+const output = process.env.WORKBENCH_SCREENSHOT_DIR || 'test-results/screenshots'
+const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-page.setDefaultTimeout(45000)
 const errors = []
-page.on('pageerror', error => errors.push(error.message))
-page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
-const metrics = { date: new Date().toISOString(), errors, mockedResponses: false, viewports: [] }
-const previous = existsSync(`${output}/workspace-metrics.json`) ? JSON.parse(readFileSync(`${output}/workspace-metrics.json`, 'utf8')) : {}
-metrics.previousModelVerification = previous.previousModelVerification || {
-  date: previous.date, managedProviderQueryMs: previous.managedProviderQueryMs,
-  managedProviderResult: previous.managedProviderResult,
-}
-metrics.newModelRequest = process.env.AGENTICRAG_REAL_SMOKE === '1'
-async function capture(name) {
-  await expect(page.locator('.connection-line')).toHaveCount(0)
-  await page.screenshot({ path: `${output}/${name}.png`, animations: 'disabled' })
-}
+page.on('pageerror', () => errors.push('pageerror'))
+page.on('console', (message) => {
+  if (message.type() === 'error') errors.push('console.error')
+})
+const metrics = { date: new Date().toISOString(), newModelRequest: false, errors, viewports: [] }
 try {
-  await page.goto(`${baseURL}/chat`)
-  await expect(page.getByRole('button', { name: '探索本地知识', exact: false })).toBeEnabled()
-  await capture('workspace-chat')
-  await page.goto(`${baseURL}/providers`)
-  await expect(page.locator('.provider-item').first()).toBeVisible()
-  if (process.env.AGENTICRAG_VERIFY_PROVIDER === '1') {
-    await page.getByRole('button', { name: '检测连接 / 获取模型' }).first().click()
-    await expect(page.locator('.provider-check-note').first()).toBeVisible()
-    metrics.providerCheck = await page.locator('.provider-check-note').first().textContent()
+  for (const path of ['settings/providers', 'sessions', 'runs']) {
+    const response = await page.request.get(`${baseURL}/api/${path}`)
+    expect(response.ok()).toBe(true)
+    expect((await response.json()).items).toHaveLength(0)
   }
-  metrics.providerCheck = await page.locator('.provider-check-note').first().textContent()
-  await capture('workspace-providers')
-  await page.getByRole('button', { name: /编辑 DeepSeek/ }).click()
-  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
-  await expect(page.locator('.el-overlay')).not.toHaveClass(/dialog-fade-enter-active/)
-  await capture('workspace-provider-dialog')
-  await page.getByRole('button', { name: '取消', exact: true }).click()
-  if (process.env.AGENTICRAG_REAL_SMOKE === '1') {
-    await page.goto(`${baseURL}/chat`)
-    await page.locator('.mode-select').click()
-    await page.getByRole('option', {name:'快速回答',exact:true}).click()
-    const input = page.getByRole('textbox', {name:'输入问题'})
-    await input.fill('仅回复“连接正常”，不要添加其他内容。')
-    const start = Date.now()
-    await input.press('Enter')
-    await expect(page.getByRole('button', { name: '停止生成', exact:true })).toBeVisible()
-    await expect(input).toBeEnabled({timeout:120000})
-    metrics.managedProviderQueryMs = Date.now()-start
-    const sessionId = await page.evaluate(() => localStorage.getItem('rag-session'))
-    const detail = await (await page.request.get(`${baseURL}/api/sessions/${sessionId}`)).json()
-    metrics.managedProviderResult = {status:detail.runs.at(-1)?.status, profileIsManaged:detail.runs.at(-1)?.result?.model_profile?.startsWith('managed:')}
-    expect(metrics.managedProviderResult.status).toBe('success')
-    expect(metrics.managedProviderResult.profileIsManaged).toBe(true)
-  }
-  const runs = await (await page.request.get(`${baseURL}/api/runs?status=success`)).json()
-  let evidenceRun
-  for (const item of runs.items) {
-    const detail = await (await page.request.get(`${baseURL}/api/runs/${item.id}`)).json()
-    if (detail.result?.source_map?.length) { evidenceRun = detail; break }
-  }
-  if (evidenceRun) {
-    await page.goto(`${baseURL}/runs?run=${evidenceRun.id}`)
-    await expect(page.locator('.waterfall-row').first()).toBeVisible()
-    await page.locator('.waterfall-row').filter({ hasText: '答案生成' }).click()
-    await capture('workspace-runs')
-    await page.getByRole('tab',{name:'最终回答'}).click()
-    const citation = page.locator('.run-answer .citation-link').first()
-    if (await citation.count()) {
-      await citation.click()
-      await expect(page.locator('.evidence-item:focus')).toBeVisible()
-      metrics.runCitationNavigation = true
-    }
-    await page.getByRole('tab',{name:'证据来源'}).click()
-    await expect(page.locator('.evidence-item').first()).toBeVisible()
-    await capture('workspace-evidence')
-    const download = page.waitForEvent('download')
-    await page.getByRole('button',{name:'导出运行记录'}).click()
-    metrics.exportDownloaded = !!(await download).suggestedFilename().endsWith('.json')
-    await page.getByRole('button',{name:'回到会话'}).click()
-    await expect(page.locator('.message.assistant .markdown').first()).toBeVisible()
-    await page.getByRole('button',{name:'展开执行详情',exact:true}).click()
-    await capture('workspace-answer')
-    const messageCitation = page.locator('.message.assistant .citation-link').first()
-    if (await messageCitation.count()) {
-      await messageCitation.click()
-      await expect(page.locator('.source-card:focus')).toBeVisible()
-      metrics.chatCitationNavigation = true
-      await capture('workspace-citation')
-    }
-    metrics.historyAnswerVisible = (await page.locator('.message.assistant .markdown').first().textContent()).length > 10
-  }
-  for (const path of ['tools','system']) {
-    await page.goto(`${baseURL}/${path}`)
-    await expect(page.locator(path === 'tools' ? '.tool-card' : '.model-table tbody tr').first()).toBeVisible()
-    await capture(`workspace-${path}`)
-  }
-  await page.setViewportSize({width:390,height:844})
-  for (const path of ['chat','providers','runs']) {
-    await page.goto(`${baseURL}/${path}${path === 'runs' && evidenceRun ? `?run=${evidenceRun.id}` : ''}`)
-    await expect(page.locator(path === 'chat' ? '.composer' : path === 'providers' ? '.provider-item' : '.run-question').first()).toBeVisible()
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
-    metrics.viewports.push({path,width:390,overflow})
-    expect(overflow).toBe(false)
-    await capture(`workspace-${path}-mobile`)
-    if (path === 'providers') {
-      await page.getByRole('button', { name: /编辑 DeepSeek/ }).click()
-      await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
-      await capture('workspace-provider-form-mobile')
-      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-      const saveBounds = await page.getByRole('button', { name: '保存配置', exact: true }).boundingBox()
-      expect(saveBounds.y + saveBounds.height).toBeLessThanOrEqual(844)
-      metrics.mobileFormFooterVisible = true
-      await page.getByRole('button', { name: '取消', exact: true }).click()
-    }
-    if (path === 'runs') {
-      await page.getByRole('button', { name: '返回运行列表' }).click()
-      await expect(page.locator('.run-detail')).toBeHidden()
-      await capture('workspace-runs-list-mobile')
-      metrics.mobileListDetailNavigation = true
+  const status = await (await page.request.get(`${baseURL}/api/status`)).json()
+  expect(status.model_profiles.every((profile) => !profile.configured)).toBe(true)
+  mkdirSync(output, { recursive: true })
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    for (const path of ['chat', 'providers', 'runs']) {
+      await page.goto(`${baseURL}/${path}`)
+      await expect(page.locator('.connection-line')).toHaveCount(0)
+      if (path === 'chat') await expect(page.getByRole('link', { name: '配置可用模型' })).toBeVisible()
+      if (path === 'providers') {
+        await expect(page.getByRole('heading', { name: '连接第一个模型供应商' })).toBeVisible()
+        await page.getByRole('button', { name: '添加供应商' }).first().click()
+        await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
+        await page.getByRole('button', { name: '取消', exact: true }).click()
+        await expect(page.getByRole('dialog')).toBeHidden()
+      }
+      if (path === 'runs') await expect(page.getByRole('heading', { name: '运行分析' })).toBeVisible()
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
+      expect(overflow).toBe(false)
+      metrics.viewports.push({ path, width: viewport.width, overflow })
+      await page.screenshot({ path: `${output}/clean-${path}-${viewport.width}.png`, animations: 'disabled' })
     }
   }
-  await page.goto(`${baseURL}/chat`)
-  await page.getByRole('button', { name: '打开导航' }).click()
-  await page.getByRole('button', { name: '新建会话', exact: true }).click()
-  await expect(page.locator('.welcome .composer')).toBeVisible()
-  await capture('workspace-empty-mobile')
-  await page.setViewportSize({ width: 320, height: 740 })
-  await expect(page.getByRole('button', { name: '发送问题' })).toBeVisible()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-  metrics.viewports.push({ path: 'empty-chat', width: 320, overflow: false })
-  await page.setViewportSize({width:1440,height:1000})
-  await page.goto(`${baseURL}/providers`)
-  await page.getByRole('button',{name:'切换深色主题'}).click()
-  await capture('workspace-dark')
-  await page.getByRole('button', { name: /编辑 DeepSeek/ }).click()
-  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
-  await capture('workspace-dark-form')
-  metrics.screenshots = 17
   expect(errors).toEqual([])
+  writeFileSync(`${output}/clean-metrics.json`, JSON.stringify(metrics, null, 2))
+  console.log(JSON.stringify(metrics, null, 2))
 } finally {
-  writeFileSync(`${output}/workspace-metrics.json`,JSON.stringify(metrics,null,2))
   await browser.close()
 }

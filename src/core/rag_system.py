@@ -613,7 +613,7 @@ class AgenticRAGSystem:
         if not profiles:
             profiles["default"] = {
                 "id": "default",
-                "label": model_cfg.get("model_name", "default"),
+                "label": model_cfg.get("model_name") or "未配置模型",
                 "config": dict(model_cfg),
             }
         return profiles

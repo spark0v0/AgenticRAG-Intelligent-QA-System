@@ -3,8 +3,9 @@ import { chromium, expect } from '@playwright/test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 if (process.env.AGENTICRAG_REAL_SMOKE !== '1' && process.env.AGENTICRAG_CAPTURE_ONLY !== '1')
   throw new Error('Set AGENTICRAG_REAL_SMOKE=1 to authorize real calls.')
-const baseURL = 'http://127.0.0.1:8002'
-const output = '../docs/screenshots'
+const baseURL = process.env.WORKBENCH_URL || 'http://127.0.0.1:8002'
+const modelLabel = process.env.WORKBENCH_MODEL_LABEL
+const output = 'test-results/real-service'
 mkdirSync(output, { recursive: true })
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
@@ -42,8 +43,10 @@ try {
     await page.reload()
     await expect(page.locator('.message.assistant').last()).toBeVisible()
   } else {
-    await page.locator('.model-select').click()
-    await page.getByRole('option', { name: 'DeepSeek V4 Pro', exact: true }).click()
+    if (modelLabel) {
+      await page.locator('.model-select').click()
+      await page.getByRole('option', { name: modelLabel, exact: true }).click()
+    }
     await page.locator('.mode-select').click()
     await page.getByRole('option', { name: '知识检索', exact: true }).click()
     const input = page.getByRole('textbox', { name: '输入问题' })
@@ -108,8 +111,10 @@ try {
   // One optional second request checks cancellation; no retry or provider switching.
   if (terminal?.type === 'completed' && process.env.AGENTICRAG_CAPTURE_ONLY !== '1') {
     await page.getByRole('button', { name: '新建会话', exact: true }).click()
-    await page.locator('.model-select').click()
-    await page.getByRole('option', { name: 'DeepSeek V4 Pro', exact: true }).click()
+    if (modelLabel) {
+      await page.locator('.model-select').click()
+      await page.getByRole('option', { name: modelLabel, exact: true }).click()
+    }
     await page.locator('.mode-select').click()
     await page.getByRole('option', { name: '快速回答', exact: true }).click()
     await input.fill('请详细解释 Vue 3 Composition API 的职责拆分，给出三个例子。')

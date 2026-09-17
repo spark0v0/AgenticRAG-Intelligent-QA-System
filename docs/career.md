@@ -21,15 +21,17 @@
 
 | 亮点 | 代码入口 | 操作路径 | 验证证据 |
 | --- | --- | --- | --- |
-| 组件与页面设计 | `frontend/src/components/`、`views/`、`styles/_tokens.scss` | `/chat`、`/providers`，切换窄屏和主题 | `tests/browser/workbench.spec.ts`、`docs/screenshots/workspace-*.png` |
-| SSE 协议与终态 | `frontend/src/api/sse.ts`、`stores/workbench.ts`、`src/models/client.py` | 发起真实问答，观察增量，停止或刷新 | `frontend/tests/unit/core.test.ts`、`tests/test_workbench_smoke.py`、真实联调 metrics |
+| 组件与页面设计 | `frontend/src/components/`、`views/`、`styles/_tokens.scss` | `/chat`、`/providers`，切换窄屏和主题 | `frontend/tests/browser/workbench.spec.ts`、`docs/screenshots/clean-*.png` |
+| SSE 协议与终态 | `frontend/src/api/sse.ts`、`stores/workbench.ts`、`src/models/client.py` | 配置模型后发起真实问答，观察增量，停止或刷新 | `frontend/tests/unit/core.test.ts`、`tests/test_workbench_smoke.py`、`verification.md` 历史记录 |
 | 会话与异步隔离 | `stores/workbench.ts`、`src/api/workbench.py` | 运行时切换会话，回到原会话停止，手动重试 | Vitest 竞态用例、Playwright 取消重试和恢复 |
 | 可追踪运行与存储 | `ExecutionPanel.vue`、`src/utils/execution.py`、`src/memory/sqlite_memory.py` | 回答下方执行详情，切换来源/工具，刷新回看 | SQLite 迁移/取消后重试测试、历史一致性验证 |
 | 可操作的供应商配置 | `components/providers/`、`views/ProvidersView.vue`、`api/client.ts` | `/providers` 校验/编辑、检查连接、设默认 | Playwright 表单保留/失败反馈；既有 Python 凭据检查与上一轮真实问答 |
-| 运行分析交互 | `components/runs/`、`views/RunsView.vue`、`composables/useRunAnalysis.ts` | `/runs` 搜索、节点选择、窄屏返回、导出 | `workspace-runs.png`、`workspace-runs-mobile.png`、Playwright |
-| 回答与证据关联 | `MarkdownContent.vue`、`MessageBubble.vue`、`ExecutionPanel.vue` | 点击最终回答中的 `[S1]`，聚焦对应证据 | Vitest 安全引用用例、真实历史 `workspace-citation.png`、`workspace-metrics.json` |
+| 运行分析交互 | `components/runs/`、`views/RunsView.vue`、`composables/useRunAnalysis.ts` | `/runs` 搜索、节点选择、窄屏返回、导出 | Playwright 流程、`verification.md` 历史记录 |
+| 回答与证据关联 | `MarkdownContent.vue`、`MessageBubble.vue`、`ExecutionPanel.vue` | 点击最终回答中的 `[S1]`，聚焦对应证据 | Vitest 安全引用用例、Playwright 流程、`verification.md` 历史记录 |
 
 ## 面试讲解
+
+隐私清理已移除旧会话与原始截图。投递前请重新配置模型，并使用不含个人信息的问题操作和留存证据；未配置页面截图不能用作真实生成验证。
 
 **为什么选这些技术？** Vue 3/TS 对应岗位与复杂交互；Pinia 管共享业务状态，Router 做页面懒加载。Element Plus 提供表单、选择器、开关和弹窗，业务配置映射和异步逻辑由项目实现。CSS 即可实现真实耗时瀑布，无需 Vue Flow 或工作流编辑。沿用 npm 锁文件，避免迁移包管理器带来额外成本。
 

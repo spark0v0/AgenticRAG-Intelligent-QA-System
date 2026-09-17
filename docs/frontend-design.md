@@ -2,7 +2,7 @@
 
 ## 核实结论
 
-最初迁移时工作区已有 `frontend/`、`api/workbench.py`、`memory/sqlite_memory.py`、`utils/execution.py`，均被保留。本次前端完善从新仓库干净的 `efaa631` 开始，Vue、SSE、SQLite、供应商管理与运行分析已经存在。原 `E:\LangChain_Dify_1` 仅作参考，没有修改其配置或数据。
+最初迁移时工作区已有 `frontend/`、`api/workbench.py`、`memory/sqlite_memory.py`、`utils/execution.py`，均被保留。后续在已有 Vue、SSE、SQLite、供应商管理与运行分析基础上完善交互。原项目仅作参考，不修改其配置或数据。
 
 已实现的业务基础：路由、规划、工具检索、生成、规则评审；本地 HashEmbeddings + Chroma + 词法混合检索；工具注册、示例 stdio MCP、LangChain Runnable 适配。规则评分不是准确率；知识图谱来自配置。Dify 是 Python 包装，未发布插件。
 
