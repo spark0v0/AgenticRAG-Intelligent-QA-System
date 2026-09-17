@@ -1,0 +1,118 @@
+model:
+  provider: deepseek
+  model_name: deepseek-v4-pro
+  fallback_models:
+  - deepseek-v4-pro
+  temperature: 0.2
+  max_tokens: 1600
+  timeout_seconds: 60
+  base_url: https://api.deepseek.com
+  supports_vision: false
+model_profiles:
+- id: ollama_qwen_06b
+  label: Ollama Qwen3 0.6B (Local)
+  provider: ollama
+  model_name: qwen3:0.6b
+  fallback_models:
+  - qwen3:0.6b
+  temperature: 0.2
+  max_tokens: 1600
+  timeout_seconds: 120
+  supports_vision: false
+- id: deepseek_v4_pro
+  label: DeepSeek V4 Pro
+  provider: deepseek
+  model_name: deepseek-v4-pro
+  fallback_models:
+  - deepseek-v4-pro
+  temperature: 0.2
+  max_tokens: 1600
+  timeout_seconds: 60
+  base_url: https://api.deepseek.com
+  supports_vision: false
+- id: doubao_seed_vision
+  label: Doubao Seed 2.0 Pro Vision
+  provider: openai
+  model_name: doubao-seed-2-0-pro-260215
+  fallback_models:
+  - doubao-seed-2-0-pro-260215
+  temperature: 0.2
+  max_tokens: 1600
+  timeout_seconds: 60
+  base_url: https://ark.cn-beijing.volces.com/api/v3
+  api_key_env: WINHUB_API_KEY
+  supports_vision: true
+retrieval:
+  knowledge_paths:
+  - README.md
+  - docs
+  - src
+  include_globs:
+  - '*.md'
+  - '*.txt'
+  - '*.py'
+  - '*.yaml'
+  - '*.yml'
+  - '*.docx'
+  collection_name: agenticrag_kb
+  persist_dir: data/chroma
+  retrieval_mode: hybrid
+  chunk_size: 900
+  chunk_overlap: 120
+  embedding_dimension: 384
+  max_document_chars: 12000
+  max_results: 8
+  knowledge_graph:
+  - source: agenticrag
+    relation: composed_of
+    target: planner
+    confidence: 0.95
+  - source: agenticrag
+    relation: composed_of
+    target: retriever
+    confidence: 0.95
+  - source: agenticrag
+    relation: composed_of
+    target: critic
+    confidence: 0.95
+  - source: agenticrag
+    relation: composed_of
+    target: generator
+    confidence: 0.95
+  - source: agenticrag
+    relation: composed_of
+    target: router
+    confidence: 0.95
+system:
+  max_retries: 2
+  max_thinking_rounds: 5
+  context_window_size: 4096
+  enable_visualization: true
+  memory_path: data/memory/sessions.json
+router:
+  simple_threshold: 0.35
+  complex_threshold: 0.68
+  use_llm: true
+  fallback_to_rules: true
+  llm_temperature: 0
+  llm_max_tokens: 400
+  llm_timeout_seconds: 12
+  llm_max_history_turns: 3
+planner:
+  max_tasks: 8
+  complexity_threshold: 0.55
+retriever:
+  max_attempts: 3
+  max_results: 8
+  quality_threshold: 0.62
+  default_strategy: parallel
+  max_selected_tools: 3
+  tool_timeout_seconds: 15
+generator:
+  enable_citation: true
+  max_context_docs: 6
+  max_context_chars: 2400
+  max_history_turns: 20
+critic:
+  quality_threshold: 0.72
+  retrieval_retry_threshold: 0.55

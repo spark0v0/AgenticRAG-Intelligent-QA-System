@@ -1,0 +1,13 @@
+# Verified direct dependency constraints; use with -r requirements.txt.
+fastapi==0.135.1
+uvicorn==0.41.0
+openai==2.26.0
+chromadb==1.5.5
+httpx==0.28.1
+pytest==9.0.2
+langchain-core==1.2.19
+langchain-text-splitters==1.1.1
+pydantic==2.12.5
+python-dotenv==1.2.2
+requests==2.32.5
+pyyaml==6.0.3

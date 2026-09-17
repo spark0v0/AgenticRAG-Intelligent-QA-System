@@ -1,0 +1,1342 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgenticRAG 智能问答系统</title>
+  <style>
+    :root {
+      --bg: #f3f7f4;
+      --panel: rgba(255,255,255,0.92);
+      --panel-strong: #ffffff;
+      --border: rgba(20, 58, 50, 0.12);
+      --text: #182524;
+      --muted: #657775;
+      --accent: #136f63;
+      --accent-soft: rgba(19, 111, 99, 0.1);
+      --user: #e7eefb;
+      --assistant: #fbfdfc;
+      --danger: #b45309;
+      --shadow: 0 18px 46px rgba(36, 62, 58, 0.08);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top, rgba(19,111,99,0.10), transparent 28%), var(--bg);
+      overflow: hidden;
+    }
+    button, textarea { font: inherit; }
+    select { font: inherit; }
+    button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      transition: transform .15s ease, opacity .15s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: .6; cursor: wait; transform: none; }
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr) 380px;
+      gap: 16px;
+      padding: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow: hidden;
+    }
+    .sidebar, .insights {
+      display: grid;
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
+      gap: 14px;
+      padding: 16px;
+    }
+    .chat-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 14px;
+      padding: 16px;
+    }
+    .row, .status-row, .composer-foot, .topbar, .chip-row, .tab-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .row, .status-row, .composer-foot, .topbar { justify-content: space-between; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 16px; }
+    h3 { font-size: 14px; }
+    .muted { color: var(--muted); }
+    .tiny { font-size: 12px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      color: #fff;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #244d45);
+    }
+    .ghost, .primary, .danger, .chip, .tab {
+      border-radius: 999px;
+      padding: 10px 14px;
+    }
+    .ghost, .tab, .chip {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-toggle { cursor: pointer; }
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      margin-bottom: 6px;
+      min-width: 140px;
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      z-index: 20;
+      overflow: hidden;
+    }
+    .dropdown-menu.show { display: block; }
+    .dropdown-item {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .dropdown-item:hover { background: var(--accent-soft); color: var(--accent); }
+    .primary {
+      background: linear-gradient(135deg, var(--accent), #244d45);
+      color: #fff;
+    }
+    .danger {
+      background: rgba(180, 83, 9, 0.10);
+      color: var(--danger);
+      border: 1px solid rgba(180, 83, 9, 0.18);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric, .card, .session-item, .tool-item, .source-item, .audit-item, .trace-item, .realtime-item {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel-strong);
+    }
+    .metric, .card, .source-item, .audit-item, .trace-item, .tool-item, .realtime-item { padding: 12px; }
+    .metric strong { display: block; margin-top: 6px; font-size: 15px; line-height: 1.4; }
+    .scroll, .thread, .tab-panel { min-height: 0; overflow: auto; }
+    .session-stack, .source-stack, .tool-stack, .audit-stack, .trace-stack, .realtime-grid { display: grid; gap: 10px; }
+    .session-item {
+      width: 100%;
+      padding: 12px;
+      text-align: left;
+      background: #fbfcfb;
+    }
+    .session-item.active {
+      background: rgba(19,111,99,0.08);
+      border-color: rgba(19,111,99,0.22);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+    }
+    .badge.subtle {
+      background: rgba(24, 37, 36, 0.06);
+      color: var(--muted);
+    }
+    .collapsible-card {
+      padding: 0;
+      overflow: hidden;
+    }
+    .collapsible-card summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .collapsible-card summary::-webkit-details-marker { display: none; }
+    .collapsible-card summary::after {
+      content: "展开";
+      font-size: 12px;
+      color: var(--muted);
+      flex: 0 0 auto;
+    }
+    .collapsible-card[open] summary::after { content: "收起"; }
+    .collapsible-body {
+      padding: 0 16px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .realtime-card { display: block; }
+    .realtime-item {
+      background: linear-gradient(180deg, rgba(19,111,99,0.04), rgba(255,255,255,0.96));
+    }
+    .realtime-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .realtime-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .thread {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(247, 250, 248, 0.95);
+    }
+    .messages { display: grid; gap: 16px; }
+    .message {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .message.user { grid-template-columns: minmax(0, 1fr) 34px; }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .avatar.user { background: linear-gradient(135deg, #4868ee, #3651b3); }
+    .avatar.ai { background: linear-gradient(135deg, var(--accent), #244d45); }
+    .bubble-wrap { display: grid; gap: 5px; }
+    .message.user .bubble-wrap { justify-items: end; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .bubble {
+      max-width: min(820px, 100%);
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.7;
+      border: 1px solid var(--border);
+      background: var(--assistant);
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .message.user .bubble {
+      background: var(--user);
+      white-space: pre-wrap;
+    }
+    .attachment-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .image-thumb {
+      position: relative;
+      width: 96px;
+      height: 72px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #edf4f2;
+      flex: 0 0 auto;
+    }
+    .image-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .image-thumb button {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: rgba(24,37,36,0.72);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .attachment-name {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 3px 5px;
+      background: rgba(24,37,36,0.64);
+      color: #fff;
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .composer-tools {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .preview-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 0;
+    }
+    .composer {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(255,255,255,0.98);
+      padding: 14px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 92px;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      line-height: 1.7;
+    }
+    textarea::placeholder { color: #8a9997; }
+    .model-select {
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: #fbfcfb;
+      color: var(--text);
+      outline: none;
+    }
+    .chip-row { flex-wrap: wrap; margin-top: 10px; }
+    .tab-row { flex-wrap: wrap; }
+    .tab.active {
+      background: var(--accent-soft);
+      border-color: rgba(19,111,99,0.18);
+      color: var(--accent);
+    }
+    .tab-panel { display: none; padding-top: 10px; }
+    .tab-panel.active { display: block; }
+    .empty {
+      padding: 14px;
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      background: #f8fbf9;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .tool-item strong, .source-item strong, .audit-item strong, .trace-item strong { display: block; }
+    .tool-item .muted, .source-item .muted, .audit-item .muted, .trace-item .muted { line-height: 1.65; margin-top: 6px; }
+    .error-box {
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(180, 83, 9, 0.08);
+      border: 1px solid rgba(180, 83, 9, 0.16);
+      color: #8b5a13;
+      line-height: 1.7;
+    }
+    .md-root p { margin: 0.75em 0; }
+    .md-root p:first-child { margin-top: 0; }
+    .md-root p:last-child { margin-bottom: 0; }
+    .md-root h1, .md-root h2, .md-root h3, .md-root h4 {
+      margin: 1em 0 0.4em;
+      line-height: 1.35;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .md-root h1 { font-size: 22px; }
+    .md-root h2 { font-size: 19px; }
+    .md-root h3 { font-size: 16px; }
+    .md-root h4 { font-size: 14px; }
+    .md-root ul, .md-root ol {
+      margin: 0.75em 0;
+      padding-left: 1.2em;
+    }
+    .md-root li { margin: 0.35em 0; }
+    .md-root code {
+      padding: 0.1em 0.42em;
+      border-radius: 8px;
+      background: rgba(19,111,99,0.08);
+      color: #8a5813;
+      font-family: Consolas, monospace;
+      font-size: 0.94em;
+    }
+    .md-root pre {
+      margin: 0.85em 0;
+      padding: 12px;
+      border-radius: 14px;
+      background: #f2f6f7;
+      color: #253339;
+      overflow: auto;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .md-root pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+    .md-root hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1em 0;
+    }
+    .md-root blockquote {
+      margin: 0.8em 0;
+      padding: 0.8em 1em;
+      border-left: 4px solid rgba(19,111,99,0.30);
+      background: rgba(19,111,99,0.08);
+      color: #3b544e;
+      border-radius: 0 12px 12px 0;
+    }
+    .md-root a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(19,111,99,0.18);
+    }
+    @media (max-width: 1280px) {
+      body { overflow: auto; }
+      .app { grid-template-columns: 280px minmax(0, 1fr); }
+      .insights { grid-column: 1 / -1; min-height: 420px; }
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar, .insights, .chat-shell { min-height: auto; }
+      .thread { padding: 14px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel sidebar">
+      <div class="row">
+        <div class="row" style="justify-content:flex-start;">
+          <div class="brand">AR</div>
+          <div>
+            <h2>AgenticRAG</h2>
+            <p class="muted tiny">本地多智能体问答助手</p>
+          </div>
+        </div>
+        <span id="routeBadge" class="badge">待命</span>
+      </div>
+
+      <button id="newChatBtn" class="primary" type="button">新建会话</button>
+
+      <details class="card collapsible-card">
+        <summary>
+          <div>
+            <h3>系统状态</h3>
+            <p class="muted tiny" style="margin-top:4px;">模型、提供方和就绪情况</p>
+          </div>
+          <span id="statusText" class="badge">检查中</span>
+        </summary>
+        <div class="collapsible-body">
+          <div class="metrics" style="margin-top:12px;">
+            <div class="metric"><span class="muted tiny">模型</span><strong id="modelText">-</strong></div>
+            <div class="metric"><span class="muted tiny">提供方</span><strong id="providerText">-</strong></div>
+            <div class="metric"><span class="muted tiny">模型就绪</span><strong id="readyText">-</strong></div>
+            <div class="metric"><span class="muted tiny">工具总数</span><strong id="toolCountText">-</strong></div>
+          </div>
+          <select id="modelProfileSelect" class="model-select" aria-label="选择模型"></select>
+          <p id="statusTime" class="muted tiny" style="margin-top:10px;">等待刷新</p>
+        </div>
+      </details>
+
+      <details class="card collapsible-card realtime-card">
+        <summary>
+          <div>
+            <h3>实时工具</h3>
+            <p class="muted tiny" style="margin-top:4px;">天气查询与联网搜索接入状态</p>
+          </div>
+          <span id="realtimeCount" class="badge subtle">0 个</span>
+        </summary>
+        <div class="collapsible-body">
+          <div id="realtimeToolsBox" class="realtime-grid" style="margin-top:12px;">
+            <div class="empty">正在检查已接入的天气和联网搜索工具...</div>
+          </div>
+        </div>
+      </details>
+
+      <div class="scroll">
+        <div class="status-row">
+          <h3>历史会话</h3>
+          <button id="refreshSessionsBtn" class="ghost" type="button">刷新</button>
+        </div>
+        <div id="sessionList" class="session-stack" style="margin-top:10px;">
+          <div class="empty">暂无会话记录</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="panel chat-shell">
+      <div class="topbar">
+        <div>
+          <h1 id="chatTitle">新会话</h1>
+          <p id="chatMeta" class="muted tiny" style="margin-top:4px;">先像正常助手一样聊天，遇到复杂问题再自动调用检索和工具。</p>
+        </div>
+        <div class="row">
+          <span id="sessionBadge" class="badge">未开始</span>
+          <button id="cancelBtn" class="danger" type="button">中断当前会话</button>
+        </div>
+      </div>
+
+      <div class="thread">
+        <div id="messageList" class="messages">
+          <div class="empty">输入任意问题即可开始。你可以闲聊、问天气、让它联网搜索，也可以做资料分析和项目问答。</div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-tools" style="margin-bottom:8px;">
+          <select id="thinkingModeSelect" class="model-select" style="width:auto;margin:0;padding:8px 12px;">
+            <option value="">自动（智能判断）</option>
+            <option value="quick">快速回答</option>
+            <option value="retrieval">知识检索</option>
+            <option value="deep">深度分析</option>
+          </select>
+        </div>
+        <textarea id="queryInput" placeholder="输入你的问题，例如：今天西安天气怎么样？ / 帮我联网搜索 AgenticRAG 最新资料"></textarea>
+        <div class="composer-tools">
+          <input id="imageInput" type="file" accept="image/*" multiple hidden>
+          <div id="imagePreview" class="preview-strip"></div>
+        </div>
+        <div class="chip-row">
+          <div class="dropdown" id="quickMenu">
+            <button class="ghost dropdown-toggle" type="button" data-target="quickMenu">功能 ▾</button>
+            <div class="dropdown-menu">
+              <button class="dropdown-item" data-query="你好，你能做什么？" type="button">普通聊天</button>
+              <button class="dropdown-item" data-query="今天西安天气怎么样？" type="button">天气查询</button>
+              <button class="dropdown-item" data-query="帮我联网搜索 AgenticRAG 最新资料" type="button">联网搜索</button>
+              <button class="dropdown-item" data-query="请分析 AgenticRAG 与传统 RAG 的区别" type="button">深度分析</button>
+              <button class="dropdown-item" data-query="1+1=几" type="button">计算工具</button>
+            </div>
+          </div>
+          <button id="attachImageBtn" class="ghost" type="button" title="最多 4 张，每张不超过 4MB">添加图片</button>
+        </div>
+        <div class="composer-foot" style="margin-top:10px;">
+          <span class="muted tiny">Enter 发送，Shift+Enter 换行</span>
+          <div class="row" style="justify-content:flex-end;">
+            <button id="clearBtn" class="ghost" type="button">清空显示</button>
+            <button id="sendBtn" class="primary" type="button">发送</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel insights">
+      <div class="row">
+        <div>
+          <h2>分析面板</h2>
+          <p class="muted tiny">查看路由、工具、来源、轨迹和能力审计</p>
+        </div>
+        <button id="refreshAuditBtn" class="ghost" type="button">刷新审计</button>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><span class="muted tiny">置信度</span><strong id="confidenceBox">-</strong></div>
+        <div class="metric"><span class="muted tiny">评审分</span><strong id="scoreBox">-</strong></div>
+        <div class="metric"><span class="muted tiny">轮数</span><strong id="turnBox">-</strong></div>
+        <div class="metric"><span class="muted tiny">模式</span><strong id="modeBox">-</strong></div>
+      </div>
+
+      <div id="modelErrorBox" class="error-box" style="display:none;"></div>
+
+      <div class="card" style="display:grid;grid-template-rows:auto auto minmax(0,1fr);min-height:0;">
+        <div class="tab-row">
+          <button class="tab active" data-tab="sources" type="button">来源</button>
+          <button class="tab" data-tab="tools" type="button">工具</button>
+          <button class="tab" data-tab="trace" type="button">轨迹</button>
+          <button class="tab" data-tab="audit" type="button">审计</button>
+        </div>
+        <p class="muted tiny" style="margin-top:8px;">当前结果的支撑证据和执行细节</p>
+        <div class="scroll">
+          <div id="sourcesPanel" class="tab-panel active"><div id="sourceList" class="source-stack"><div class="empty">本轮暂无来源</div></div></div>
+          <div id="toolsPanel" class="tab-panel"><div id="toolList" class="tool-stack"><div class="empty">尚未触发工具调用</div></div></div>
+          <div id="tracePanel" class="tab-panel"><div id="traceList" class="trace-stack"><div class="empty">发起对话后，这里会显示执行轨迹。</div></div></div>
+          <div id="auditPanel" class="tab-panel"><div id="auditList" class="audit-stack"><div class="empty">加载中...</div></div></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const state = {
+      currentSessionId: "",
+      latestResult: null,
+      sessions: [],
+      pendingImages: [],
+      selectedModelProfile: "",
+      thinkingMode: ""
+    };
+
+    const maxImagesPerQuery = 4;
+    const maxImageBytes = 4 * 1024 * 1024;
+
+    const routeLabelMap = {
+      direct: "直接回答",
+      retrieval: "检索增强",
+      planning: "规划分析"
+    };
+
+    const toolLabelMap = {
+      weather_lookup: "天气查询",
+      web_search: "联网搜索",
+      knowledge_base_search: "知识库检索",
+      knowledge_graph_search: "知识图谱",
+      calculator: "计算器",
+      project_capability_lookup: "能力查询"
+    };
+
+    const els = {
+      statusText: document.getElementById("statusText"),
+      modelText: document.getElementById("modelText"),
+      modelProfileSelect: document.getElementById("modelProfileSelect"),
+      providerText: document.getElementById("providerText"),
+      readyText: document.getElementById("readyText"),
+      toolCountText: document.getElementById("toolCountText"),
+      realtimeCount: document.getElementById("realtimeCount"),
+      realtimeToolsBox: document.getElementById("realtimeToolsBox"),
+      statusTime: document.getElementById("statusTime"),
+      routeBadge: document.getElementById("routeBadge"),
+      sessionList: document.getElementById("sessionList"),
+      newChatBtn: document.getElementById("newChatBtn"),
+      refreshSessionsBtn: document.getElementById("refreshSessionsBtn"),
+      chatTitle: document.getElementById("chatTitle"),
+      chatMeta: document.getElementById("chatMeta"),
+      sessionBadge: document.getElementById("sessionBadge"),
+      cancelBtn: document.getElementById("cancelBtn"),
+      messageList: document.getElementById("messageList"),
+      queryInput: document.getElementById("queryInput"),
+      imageInput: document.getElementById("imageInput"),
+      attachImageBtn: document.getElementById("attachImageBtn"),
+      imagePreview: document.getElementById("imagePreview"),
+      clearBtn: document.getElementById("clearBtn"),
+      sendBtn: document.getElementById("sendBtn"),
+      confidenceBox: document.getElementById("confidenceBox"),
+      scoreBox: document.getElementById("scoreBox"),
+      turnBox: document.getElementById("turnBox"),
+      modeBox: document.getElementById("modeBox"),
+      modelErrorBox: document.getElementById("modelErrorBox"),
+      sourceList: document.getElementById("sourceList"),
+      toolList: document.getElementById("toolList"),
+      traceList: document.getElementById("traceList"),
+      auditList: document.getElementById("auditList"),
+      refreshAuditBtn: document.getElementById("refreshAuditBtn"),
+      tabs: Array.from(document.querySelectorAll(".tab")),
+      panels: {
+        sources: document.getElementById("sourcesPanel"),
+        tools: document.getElementById("toolsPanel"),
+        trace: document.getElementById("tracePanel"),
+        audit: document.getElementById("auditPanel")
+      }
+    };
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "请求失败");
+      }
+      return data;
+    }
+
+    function createNode(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function formatTime(ts) {
+      if (!ts) return "-";
+      const value = typeof ts === "number" ? ts * 1000 : ts;
+      try {
+        return new Date(value).toLocaleString();
+      } catch {
+        return "-";
+      }
+    }
+
+    function readImageFile(file) {
+      return new Promise((resolve, reject) => {
+        if (!file.type.startsWith("image/")) {
+          reject(new Error(`${file.name} 不是图片文件`));
+          return;
+        }
+        if (file.size > maxImageBytes) {
+          reject(new Error(`${file.name} 超过 4MB`));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+          type: "image",
+          filename: file.name,
+          mime_type: file.type,
+          size: file.size,
+          data_url: String(reader.result || "")
+        });
+        reader.onerror = () => reject(new Error(`${file.name} 读取失败`));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function handleImageFiles(files) {
+      const remaining = maxImagesPerQuery - state.pendingImages.length;
+      const selected = Array.from(files || []).slice(0, Math.max(remaining, 0));
+      if (!selected.length) {
+        if (files?.length) alert(`最多只能添加 ${maxImagesPerQuery} 张图片`);
+        return;
+      }
+      try {
+        const images = await Promise.all(selected.map(readImageFile));
+        state.pendingImages.push(...images);
+        renderImagePreview();
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        els.imageInput.value = "";
+      }
+    }
+
+    function renderAttachmentGrid(attachments, removable = false) {
+      const grid = createNode("div", "attachment-grid");
+      (attachments || []).forEach((image, index) => {
+        const thumb = createNode("div", "image-thumb");
+        const img = document.createElement("img");
+        img.src = image.data_url || "";
+        img.alt = image.filename || `image-${index + 1}`;
+        thumb.appendChild(img);
+        thumb.appendChild(createNode("div", "attachment-name", image.filename || `图片 ${index + 1}`));
+        if (removable) {
+          const remove = createNode("button", "", "×");
+          remove.type = "button";
+          remove.title = "移除图片";
+          remove.addEventListener("click", () => {
+            state.pendingImages.splice(index, 1);
+            renderImagePreview();
+          });
+          thumb.appendChild(remove);
+        }
+        grid.appendChild(thumb);
+      });
+      return grid;
+    }
+
+    function renderImagePreview() {
+      els.imagePreview.replaceChildren();
+      if (!state.pendingImages.length) return;
+      els.imagePreview.appendChild(renderAttachmentGrid(state.pendingImages, true));
+    }
+
+    function setBusy(isBusy) {
+      els.sendBtn.disabled = isBusy;
+      els.cancelBtn.disabled = !state.currentSessionId || !isBusy;
+      els.sendBtn.textContent = isBusy ? "处理中..." : "发送";
+    }
+
+    function setActiveTab(name) {
+      els.tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
+      Object.entries(els.panels).forEach(([key, panel]) => panel.classList.toggle("active", key === name));
+    }
+
+    function updateRouteBadge(route) {
+      const label = routeLabelMap[route] || "待命";
+      els.routeBadge.textContent = label;
+    }
+
+    function toolDisplayName(name) {
+      return toolLabelMap[name] || name || "tool";
+    }
+
+    function renderInlineMarkdown(text) {
+      const codeSpans = [];
+      const tokenized = String(text || "").replace(/`([^`]+)`/g, (_, code) => {
+        const index = codeSpans.push(`<code>${escapeHtml(code)}</code>`) - 1;
+        return `\u0000CODE${index}\u0000`;
+      });
+      let html = escapeHtml(tokenized);
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/(^|[^\*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+      html = html.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => codeSpans[Number(index)] || "");
+      return html;
+    }
+
+    function isFenceLine(line) {
+      return /^```/.test(line.trim());
+    }
+
+    function isHeadingLine(line) {
+      return /^(#{1,4})\s+/.test(line.trim());
+    }
+
+    function isQuoteLine(line) {
+      return /^>\s?/.test(line.trim());
+    }
+
+    function isUnorderedListLine(line) {
+      return /^\s*[-*+]\s+/.test(line);
+    }
+
+    function isOrderedListLine(line) {
+      return /^\s*\d+[.)]\s+/.test(line);
+    }
+
+    function isHorizontalRuleLine(line) {
+      return /^\s*([-*_]\s*){3,}$/.test(line);
+    }
+
+    function isMarkdownBlockStart(line) {
+      return (
+        isFenceLine(line) ||
+        isHeadingLine(line) ||
+        isQuoteLine(line) ||
+        isUnorderedListLine(line) ||
+        isOrderedListLine(line) ||
+        isHorizontalRuleLine(line)
+      );
+    }
+
+    function renderListBlock(lines, startIndex, ordered) {
+      const tag = ordered ? "ol" : "ul";
+      const marker = ordered ? /^\s*\d+[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
+      const items = [];
+      let index = startIndex;
+
+      while (index < lines.length) {
+        const match = lines[index].match(marker);
+        if (!match) break;
+
+        const itemLines = [match[1]];
+        index += 1;
+
+        while (index < lines.length) {
+          const line = lines[index];
+          if (!line.trim()) break;
+          if (line.match(marker)) break;
+          if (isMarkdownBlockStart(line) && !/^\s{2,}\S/.test(line)) break;
+          itemLines.push(line.trim());
+          index += 1;
+        }
+
+        items.push(`<li>${itemLines.map(renderInlineMarkdown).join("<br>")}</li>`);
+      }
+
+      return { html: `<${tag}>${items.join("")}</${tag}>`, nextIndex: index };
+    }
+
+    function renderMarkdown(text) {
+      const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
+      if (!normalized) {
+        return '<div class="empty">暂无内容</div>';
+      }
+
+      const lines = normalized.split("\n");
+      const html = [];
+      let index = 0;
+
+      while (index < lines.length) {
+        const line = lines[index];
+        const trimmed = line.trim();
+        if (!trimmed) {
+          index += 1;
+          continue;
+        }
+
+        if (isFenceLine(line)) {
+          const codeLines = [];
+          index += 1;
+          while (index < lines.length && !isFenceLine(lines[index])) {
+            codeLines.push(lines[index]);
+            index += 1;
+          }
+          if (index < lines.length && isFenceLine(lines[index])) {
+            index += 1;
+          }
+          html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+          continue;
+        }
+
+        const heading = trimmed.match(/^(#{1,4})\s+(.+)$/);
+        if (heading) {
+          const level = Math.min(heading[1].length, 4);
+          html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+          index += 1;
+          continue;
+        }
+
+        if (isHorizontalRuleLine(line)) {
+          html.push("<hr>");
+          index += 1;
+          continue;
+        }
+
+        if (isQuoteLine(line)) {
+          const quoteLines = [];
+          while (index < lines.length && isQuoteLine(lines[index])) {
+            quoteLines.push(lines[index].trim().replace(/^>\s?/, ""));
+            index += 1;
+          }
+          html.push(`<blockquote>${quoteLines.map(renderInlineMarkdown).join("<br>")}</blockquote>`);
+          continue;
+        }
+
+        if (isUnorderedListLine(line)) {
+          const result = renderListBlock(lines, index, false);
+          html.push(result.html);
+          index = result.nextIndex;
+          continue;
+        }
+
+        if (isOrderedListLine(line)) {
+          const result = renderListBlock(lines, index, true);
+          html.push(result.html);
+          index = result.nextIndex;
+          continue;
+        }
+
+        const paragraphLines = [];
+        while (index < lines.length && lines[index].trim() && !isMarkdownBlockStart(lines[index])) {
+          paragraphLines.push(lines[index].trim());
+          index += 1;
+        }
+        html.push(`<p>${paragraphLines.map(renderInlineMarkdown).join("<br>")}</p>`);
+      }
+
+      return `<div class="md-root">${html.join("")}</div>`;
+    }
+
+    function renderMessages(messages) {
+      els.messageList.replaceChildren();
+      if (!Array.isArray(messages) || messages.length === 0) {
+        els.messageList.appendChild(createNode("div", "empty", "输入任意问题即可开始。你可以闲聊、问天气、联网搜索，也可以做项目分析。"));
+        return;
+      }
+
+      messages.forEach((message) => {
+        const isUser = message.role === "user";
+        const row = createNode("div", `message ${isUser ? "user" : "assistant"}`);
+        const avatar = createNode("div", `avatar ${isUser ? "user" : "ai"}`, isUser ? "U" : "AI");
+        const wrap = createNode("div", "bubble-wrap");
+        wrap.appendChild(createNode("div", "meta", `${isUser ? "用户" : "AgenticRAG"} · ${formatTime(message.timestamp)}`));
+        const bubble = createNode("div", "bubble");
+        if (isUser) {
+          bubble.textContent = message.content || "";
+        } else {
+          bubble.innerHTML = renderMarkdown(message.content || "");
+        }
+        wrap.appendChild(bubble);
+        if (Array.isArray(message.attachments) && message.attachments.length) {
+          wrap.appendChild(renderAttachmentGrid(message.attachments, false));
+        }
+
+        if (isUser) {
+          row.appendChild(wrap);
+          row.appendChild(avatar);
+        } else {
+          row.appendChild(avatar);
+          row.appendChild(wrap);
+        }
+        els.messageList.appendChild(row);
+      });
+    }
+
+    function renderSessions(items) {
+      state.sessions = Array.isArray(items) ? items : [];
+      els.sessionList.replaceChildren();
+      if (!state.sessions.length) {
+        els.sessionList.appendChild(createNode("div", "empty", "暂无会话记录"));
+        return;
+      }
+      state.sessions.forEach((session) => {
+        const button = createNode("button", `session-item ${session.session_id === state.currentSessionId ? "active" : ""}`);
+        button.type = "button";
+        button.innerHTML = `
+          <div class="row"><strong>${escapeHtml(session.session_title || "未命名会话")}</strong><span class="muted tiny">${session.turn_count || 0} 轮</span></div>
+          <div class="muted tiny" style="margin-top:8px;line-height:1.6;">${escapeHtml(session.preview || "")}</div>
+        `;
+        button.addEventListener("click", () => loadSession(session.session_id));
+        els.sessionList.appendChild(button);
+      });
+    }
+
+    function renderSources(sources) {
+      els.sourceList.replaceChildren();
+      if (!Array.isArray(sources) || !sources.length) {
+        els.sourceList.appendChild(createNode("div", "empty", "本轮暂无来源"));
+        return;
+      }
+      sources.forEach((source, index) => {
+        const item = createNode("div", "source-item");
+        item.innerHTML = `<strong>来源 ${index + 1}</strong><div class="muted tiny">${escapeHtml(source)}</div>`;
+        els.sourceList.appendChild(item);
+      });
+    }
+
+    function renderToolCalls(toolCalls, toolErrors) {
+      els.toolList.replaceChildren();
+      const calls = Array.isArray(toolCalls) ? toolCalls : [];
+      if (!calls.length) {
+        els.toolList.appendChild(createNode("div", "empty", "尚未触发工具调用"));
+        return;
+      }
+      calls.forEach((call, index) => {
+        const item = createNode("div", "tool-item");
+        const meta = call.metadata || {};
+        item.innerHTML = `
+          <strong>${index + 1}. ${escapeHtml(toolDisplayName(call.tool || "tool"))}</strong>
+          <div class="muted tiny">状态：${escapeHtml(call.status || "unknown")} · 文档数：${escapeHtml(String(call.document_count ?? 0))}</div>
+          <div class="muted tiny">协议：${escapeHtml(meta.protocol || "-")} · 延迟：${escapeHtml(String(meta.latency_ms ?? "-"))} ms</div>
+          <div class="muted tiny">${escapeHtml(call.error || "调用成功")}</div>
+        `;
+        els.toolList.appendChild(item);
+      });
+      if (Array.isArray(toolErrors) && toolErrors.length) {
+        const summary = createNode("div", "error-box", `存在 ${toolErrors.length} 个工具错误，但系统已继续给出当前可用答案。`);
+        els.toolList.prepend(summary);
+      }
+    }
+
+    function renderTrace(trace) {
+      els.traceList.replaceChildren();
+      if (!Array.isArray(trace) || !trace.length) {
+        els.traceList.appendChild(createNode("div", "empty", "发起对话后，这里会显示执行轨迹。"));
+        return;
+      }
+      trace.forEach((item, index) => {
+        const node = createNode("div", "trace-item");
+        node.innerHTML = `<strong>${index + 1}. ${escapeHtml(item.step || "unknown")}</strong><div class="muted tiny">${escapeHtml(JSON.stringify(item.data || {}, null, 2))}</div>`;
+        els.traceList.appendChild(node);
+      });
+    }
+
+    function renderAudit(items) {
+      els.auditList.replaceChildren();
+      if (!Array.isArray(items) || !items.length) {
+        els.auditList.appendChild(createNode("div", "empty", "暂无审计结果"));
+        return;
+      }
+      items.forEach((item) => {
+        const node = createNode("div", "audit-item");
+        node.innerHTML = `<strong>${escapeHtml(item.title || "-")}</strong><div class="muted tiny">${escapeHtml(item.note || "-")}</div>`;
+        els.auditList.appendChild(node);
+      });
+    }
+
+    function renderRealtimeTools(tools) {
+      const realtimeTools = Array.isArray(tools)
+        ? tools.filter((tool) => Array.isArray(tool.tags) && tool.tags.includes("realtime"))
+        : [];
+
+      els.realtimeToolsBox.replaceChildren();
+      els.realtimeCount.textContent = `${realtimeTools.length} 个`;
+
+      if (!realtimeTools.length) {
+        els.realtimeToolsBox.appendChild(createNode("div", "empty", "当前未检测到实时工具。"));
+        return;
+      }
+
+      realtimeTools.forEach((tool) => {
+        const item = createNode("div", "realtime-item");
+        const tags = (tool.tags || [])
+          .map((tag) => `<span class="realtime-tag">${escapeHtml(tag)}</span>`)
+          .join("");
+        item.innerHTML = `
+          <div class="row"><strong>${escapeHtml(toolDisplayName(tool.name))}</strong><span class="badge subtle">${escapeHtml(tool.protocol || "-")}</span></div>
+          <div class="muted tiny">${escapeHtml(tool.description || "暂无描述")}</div>
+          <div class="realtime-tags">${tags}</div>
+        `;
+        els.realtimeToolsBox.appendChild(item);
+      });
+    }
+
+    function renderModelProfiles(profiles, defaultProfile) {
+      const items = Array.isArray(profiles) ? profiles : [];
+      els.modelProfileSelect.replaceChildren();
+      if (!items.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "默认模型";
+        els.modelProfileSelect.appendChild(option);
+        return;
+      }
+
+      if (!state.selectedModelProfile) {
+        state.selectedModelProfile = defaultProfile || items[0].id || "";
+      }
+
+      items.forEach((profile) => {
+        const option = document.createElement("option");
+        option.value = profile.id || "";
+        option.dataset.provider = profile.provider || "";
+        option.dataset.modelName = profile.model_name || "";
+        const vision = profile.supports_vision ? " · Vision" : "";
+        option.textContent = `${profile.label || profile.model_name || profile.id}${vision}`;
+        els.modelProfileSelect.appendChild(option);
+      });
+
+      els.modelProfileSelect.value = state.selectedModelProfile;
+      if (!els.modelProfileSelect.value) {
+        state.selectedModelProfile = defaultProfile || items[0].id || "";
+        els.modelProfileSelect.value = state.selectedModelProfile;
+      }
+    }
+
+    function renderResult(result) {
+      state.latestResult = result;
+      state.currentSessionId = result.session_id || state.currentSessionId;
+      els.chatTitle.textContent = result.session_title || "当前会话";
+      els.chatMeta.textContent = `${result.reasoning || "处理完成"} · 路由：${result.routing?.reasoning || "-"}`;
+      els.sessionBadge.textContent = result.session_id ? `会话 ${result.session_id}` : "未开始";
+      els.confidenceBox.textContent = result.confidence ?? "-";
+      els.scoreBox.textContent = result.evaluation_score ?? "-";
+      els.turnBox.textContent = result.turn_count ?? "-";
+      els.modeBox.textContent = result.response_mode || "-";
+      updateRouteBadge(result.routing?.route);
+      renderMessages(result.messages || []);
+      renderSources(result.sources || []);
+      renderToolCalls(result.tool_calls || [], result.tool_errors || []);
+      renderTrace(result.execution_trace || []);
+      renderSessions(state.sessions);
+
+      if (result.model_error) {
+        els.modelErrorBox.style.display = "block";
+        els.modelErrorBox.textContent = `模型或工具调用提醒：${result.model_error}`;
+      } else {
+        els.modelErrorBox.style.display = "none";
+        els.modelErrorBox.textContent = "";
+      }
+    }
+
+    function resetChatView() {
+      state.currentSessionId = "";
+      state.latestResult = null;
+      state.pendingImages = [];
+      els.imageInput.value = "";
+      renderImagePreview();
+      els.chatTitle.textContent = "新会话";
+      els.chatMeta.textContent = "先像正常助手一样聊天，遇到复杂问题再自动调用检索和工具。";
+      els.sessionBadge.textContent = "未开始";
+      els.confidenceBox.textContent = "-";
+      els.scoreBox.textContent = "-";
+      els.turnBox.textContent = "-";
+      els.modeBox.textContent = "-";
+      els.modelErrorBox.style.display = "none";
+      els.modelErrorBox.textContent = "";
+      updateRouteBadge(null);
+      renderMessages([]);
+      renderSources([]);
+      renderToolCalls([], []);
+      renderTrace([]);
+      renderSessions(state.sessions);
+      setBusy(false);
+    }
+
+    async function refreshStatus() {
+      try {
+        const data = await requestJson("/status");
+        els.statusText.textContent = data.status === "running" ? "运行中" : (data.status || "-");
+        els.modelText.textContent = data.model_name || "-";
+        els.providerText.textContent = data.model_provider || "-";
+        els.readyText.textContent = data.model_ready ? "已就绪" : "未就绪";
+        els.toolCountText.textContent = Array.isArray(data.tools) ? `${data.tools.length} 个` : "-";
+        renderModelProfiles(data.model_profiles || [], data.default_model_profile || "");
+        renderRealtimeTools(data.tools || []);
+        els.statusTime.textContent = `最近刷新：${new Date().toLocaleTimeString()}`;
+      } catch (error) {
+        els.statusText.textContent = "获取失败";
+        els.statusTime.textContent = error.message;
+      }
+    }
+
+    async function refreshSessions() {
+      try {
+        const data = await requestJson("/sessions");
+        renderSessions(data.items || []);
+      } catch (error) {
+        els.sessionList.replaceChildren(createNode("div", "empty", `会话列表加载失败：${error.message}`));
+      }
+    }
+
+    async function loadSession(sessionId) {
+      try {
+        const data = await requestJson(`/sessions/${encodeURIComponent(sessionId)}`);
+        state.currentSessionId = sessionId;
+        els.chatTitle.textContent = data.session_title || "历史会话";
+        els.chatMeta.textContent = `${data.turn_count || 0} 轮对话`;
+        els.sessionBadge.textContent = `会话 ${data.session_id}`;
+        els.turnBox.textContent = data.turn_count ?? "-";
+        updateRouteBadge(null);
+        renderMessages(data.messages || []);
+        renderTrace(data.trace || []);
+        renderSessions(state.sessions);
+      } catch (error) {
+        alert(`加载会话失败：${error.message}`);
+      }
+    }
+
+    async function refreshAudit() {
+      try {
+        const data = await requestJson("/requirements-audit");
+        renderAudit(data.items || []);
+      } catch (error) {
+        els.auditList.replaceChildren(createNode("div", "empty", `审计结果加载失败：${error.message}`));
+      }
+    }
+
+    async function cancelCurrentSession() {
+      if (!state.currentSessionId) return;
+      try {
+        const result = await requestJson(`/sessions/${encodeURIComponent(state.currentSessionId)}/cancel`, { method: "POST" });
+        if (result.cancelled) {
+          els.chatMeta.textContent = "当前会话已发送中断请求。";
+        }
+      } catch (error) {
+        alert(`取消失败：${error.message}`);
+      }
+    }
+
+    async function sendQuery() {
+      const query = els.queryInput.value.trim();
+      const images = [...state.pendingImages];
+      if (!query && !images.length) return;
+      els.queryInput.value = "";
+      state.pendingImages = [];
+      renderImagePreview();
+      setBusy(true);
+      const pending = state.latestResult?.messages ? [...state.latestResult.messages] : [];
+      pending.push({ role: "user", content: query || "请描述这张图片。", attachments: images, timestamp: Date.now() / 1000 });
+      pending.push({ role: "assistant", content: "正在思考并选择合适的处理路径，请稍候...", timestamp: Date.now() / 1000 });
+      renderMessages(pending);
+
+      try {
+        const result = await requestJson("/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            context: state.thinkingMode ? { thinking_mode: state.thinkingMode } : null,
+            session_id: state.currentSessionId || null,
+            model_profile: state.selectedModelProfile || null,
+            images
+          })
+        });
+        renderResult(result);
+        await refreshSessions();
+      } catch (error) {
+        renderMessages([{ role: "assistant", content: `请求失败：${error.message}`, timestamp: Date.now() / 1000 }]);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    document.querySelectorAll(".dropdown-item").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        els.queryInput.value = item.dataset.query || "";
+        els.queryInput.focus();
+        document.querySelectorAll(".dropdown-menu").forEach((menu) => menu.classList.remove("show"));
+      });
+    });
+
+    document.querySelectorAll(".dropdown-toggle").forEach((toggle) => {
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const targetId = toggle.dataset.target;
+        const menu = document.getElementById(targetId)?.querySelector(".dropdown-menu");
+        if (menu) {
+          const isOpen = menu.classList.contains("show");
+          document.querySelectorAll(".dropdown-menu").forEach((m) => m.classList.remove("show"));
+          if (!isOpen) menu.classList.add("show");
+        }
+      });
+    });
+
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".dropdown-menu").forEach((menu) => menu.classList.remove("show"));
+    });
+
+    els.thinkingModeSelect = document.getElementById("thinkingModeSelect");
+    els.thinkingModeSelect.addEventListener("change", () => {
+      state.thinkingMode = els.thinkingModeSelect.value;
+    });
+
+    els.tabs.forEach((tab) => tab.addEventListener("click", () => setActiveTab(tab.dataset.tab)));
+    els.newChatBtn.addEventListener("click", resetChatView);
+    els.refreshSessionsBtn.addEventListener("click", refreshSessions);
+    els.refreshAuditBtn.addEventListener("click", refreshAudit);
+    els.cancelBtn.addEventListener("click", cancelCurrentSession);
+    els.clearBtn.addEventListener("click", resetChatView);
+    els.attachImageBtn.addEventListener("click", () => els.imageInput.click());
+    els.imageInput.addEventListener("change", (event) => handleImageFiles(event.target.files));
+    els.modelProfileSelect.addEventListener("change", () => {
+      state.selectedModelProfile = els.modelProfileSelect.value;
+      const selected = els.modelProfileSelect.selectedOptions[0];
+      if (selected) {
+        els.modelText.textContent = selected.dataset.modelName || "-";
+        els.providerText.textContent = selected.dataset.provider || "-";
+      }
+    });
+    els.sendBtn.addEventListener("click", sendQuery);
+    els.queryInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendQuery();
+      }
+    });
+
+    refreshStatus();
+    refreshSessions();
+    refreshAudit();
+  </script>
+</body>
+</html>
