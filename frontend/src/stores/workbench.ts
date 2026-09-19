@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
+import { useKnowledge } from './knowledge'
 import { readEvents } from '../api/sse'
 import type {
   ExecutionEvent,
@@ -13,6 +14,8 @@ import type {
 } from '../types'
 
 interface Conversation {
+  knowledgeBaseId?: string
+  searchScope?: 'auto' | 'local' | 'web' | 'all'
   id: string
   title: string
   messages: Message[]
@@ -72,6 +75,7 @@ export const useWorkbench = defineStore('workbench', () => {
     ['', 'quick', 'retrieval', 'deep'].includes(savedThinking) ? savedThinking : '',
   )
   const loading = ref(false)
+  const searchScope = ref<'auto' | 'local' | 'web' | 'all'>('auto')
   const loadingSession = ref(false)
   const error = ref('')
   const theme = ref(storage.get('rag-theme') || 'light')
@@ -83,6 +87,35 @@ export const useWorkbench = defineStore('workbench', () => {
   watch(model, (value) => storage.set('rag-model', value))
   watch(thinking, (value) => storage.set('rag-thinking', value))
   const current = computed(() => conversations.value[currentId.value])
+  const knowledge = useKnowledge()
+  watch(
+    currentId,
+    () => {
+      const conversation = current.value
+      const scope = conversation?.searchScope || (conversation?.knowledgeBaseId ? 'local' : 'auto')
+      knowledge.selectedId = conversation?.knowledgeBaseId || ''
+      searchScope.value = scope
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    () => knowledge.selectedId,
+    (id) => {
+      if (current.value) current.value.knowledgeBaseId = id
+      if (id) {
+        if (searchScope.value !== 'all') searchScope.value = 'local'
+        if (thinking.value === 'quick') thinking.value = 'retrieval'
+      }
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    searchScope,
+    (scope) => {
+      if (current.value) current.value.searchScope = scope
+    },
+    { flush: 'sync' },
+  )
   const busy = computed(() => !!current.value?.activeRun)
   const hasPending = computed(() => Object.values(conversations.value).some((c) => !!c.activeRun))
   const profile = computed(() => system.value?.model_profiles.find((p) => p.id === model.value))
@@ -109,6 +142,8 @@ export const useWorkbench = defineStore('workbench', () => {
     conversations.value[id] = {
       id,
       title: '新会话',
+      knowledgeBaseId: knowledge.selectedId,
+      searchScope: searchScope.value,
       messages: [],
       events: [],
       status: 'idle',
@@ -175,6 +210,10 @@ export const useWorkbench = defineStore('workbench', () => {
       conversations.value[id] = {
         id,
         title: detail.session_title,
+        knowledgeBaseId: messages.findLast((m) => m.result?.retrieval_plan)?.result?.retrieval_plan
+          ?.knowledge_base_id,
+        searchScope: (messages.findLast((m) => m.result?.retrieval_plan)?.result?.retrieval_plan
+          ?.search_scope || 'auto') as Conversation['searchScope'],
         messages,
         events: detail.trace,
         status: 'idle',
@@ -204,8 +243,19 @@ export const useWorkbench = defineStore('workbench', () => {
       const status = await api.status()
       if (version !== initVersion) return
       system.value = status
-      if (!status.model_profiles.some((p) => p.id === model.value))
-        model.value = status.default_model_profile
+      if (
+        !status.model_profiles.some((p) => p.id === model.value) ||
+        (model.value === 'default' &&
+          !status.model_profiles.find((p) => p.id === 'default')?.configured)
+      ) {
+        const defaultProfile = status.model_profiles.find(
+          (p) => p.id === status.default_model_profile,
+        )
+        model.value =
+          (defaultProfile?.configured
+            ? defaultProfile.id
+            : status.model_profiles.find((p) => p.configured)?.id) || status.default_model_profile
+      }
       await refreshSessions()
       if (version !== initVersion) return
       if (!currentId.value) {
@@ -254,7 +304,11 @@ export const useWorkbench = defineStore('workbench', () => {
       run_id: id,
       model_profile: model.value,
       images: [...conversation.images],
-      context: { thinking_mode: thinking.value },
+      context: {
+        thinking_mode: thinking.value,
+        search_scope: searchScope.value,
+        knowledge_base_id: useKnowledge().selectedId || undefined,
+      },
     }
     const run: Pending = {
       controller: new AbortController(),
@@ -314,6 +368,18 @@ export const useWorkbench = defineStore('workbench', () => {
             : event,
         )
       switch (event.type) {
+        case 'stage':
+          if (event.data.status === 'running') {
+            const phases: Record<string, string> = {
+              router: '正在识别请求…',
+              planner: '正在规划检索子问题…',
+              retriever: '正在检索证据…',
+              generator: '正在等待模型回答…',
+              critic: '正在检查证据引用…',
+            }
+            assistant.phase = phases[event.data.node] || '正在执行…'
+          }
+          break
         case 'answer_start':
           flush(run, assistant)
           assistant.content = ''
@@ -420,6 +486,7 @@ export const useWorkbench = defineStore('workbench', () => {
     selectedEvents,
     model,
     thinking,
+    searchScope,
     loading,
     loadingSession,
     error,

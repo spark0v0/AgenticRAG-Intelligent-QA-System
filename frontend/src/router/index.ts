@@ -5,6 +5,11 @@ export const router = createRouter({
   routes: [
     { path: '/', redirect: '/chat' },
     {
+      path: '/knowledge',
+      component: () => import('../views/KnowledgeView.vue'),
+      meta: { title: '知识库' },
+    },
+    {
       path: '/chat',
       component: () => import('../views/ChatView.vue'),
       meta: { title: '智能问答' },

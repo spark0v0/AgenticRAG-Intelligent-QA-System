@@ -1,8 +1,20 @@
 ﻿from __future__ import annotations
 
 from typing import Any, Dict, List
+import asyncio
+import json
+import re
+from pydantic import BaseModel, Field, ValidationError
+from models import build_model_client
 
 from .base_agent import AgentInput, AgentOutput, BaseAgent
+
+
+class SearchPlan(BaseModel):
+    rewritten_query: str = Field(min_length=1, max_length=600)
+    search_queries: list[str] = Field(min_length=1, max_length=3)
+
+    # Independent evidence questions; generation remains the dependent final step.
 
 
 class Planner(BaseAgent):
@@ -23,9 +35,39 @@ class Planner(BaseAgent):
         intent = self._resolve_intent(query, context)
         complexity = self._resolve_complexity(query, context)
         tasks = self._build_tasks(rewritten_query, intent, complexity)
-        strategy = "sequential" if complexity >= self.complexity_threshold else "parallel"
+        search_queries = [rewritten_query]
+        planning_source = "bounded_template"
+        if self.config.get("use_llm", True) and context.get("model_config") and complexity >= self.complexity_threshold:
+            cfg = {**context["model_config"], "max_tokens": 500, "temperature": 0}
+            timeout = float(self.config.get("timeout_seconds", 8))
+            try:
+                client = build_model_client(cfg)
+                if client.is_available:
+                    response = await asyncio.wait_for(client.generate(
+                        "你是检索规划器。仅输出 JSON，包含 rewritten_query 和 search_queries。"
+                        "根据当前问题和最近问题消解指代；拆成1至3个可独立检索的具体问题。"
+                        "保留实体、时间和约束，不编造答案，不输出思维链。",
+                        json.dumps({"query": query, "knowledge_base_id": context.get("knowledge_base_id"), "search_scope": context.get("search_scope"), "previous_question": (input_data.history or [{}])[-1].get("query", "")[:600]}, ensure_ascii=False)), timeout)
+                    raw = response.content.strip()
+                    if raw.startswith("```"):
+                        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)
+                    parsed = SearchPlan.model_validate_json(raw)
+                    if response.error or any(not q.strip() or len(q) > 600 for q in parsed.search_queries):
+                        raise ValueError("Invalid search plan")
+                    rewritten_query = parsed.rewritten_query
+                    search_queries = list(dict.fromkeys(q.strip() for q in parsed.search_queries))
+                    planning_source = "structured_model"
+            except (TimeoutError, ValueError, ValidationError):
+                planning_source = "template_after_model_failure"
+        strategy = "parallel"
         estimated_time = sum(task["estimated_seconds"] for task in tasks)
         recommended_tools = sorted({tool for task in tasks for tool in task["tools"]})
+        if planning_source == "structured_model":
+            tasks = [{"id": f"search_{i + 1}", "type": "retrieval", "description": question,
+                      "dependencies": [], "tools": recommended_tools}
+                     for i, question in enumerate(search_queries)]
+            tasks.append({"id": "synthesize", "type": "generation", "description": "综合子问题证据并回答原问题",
+                          "dependencies": [task["id"] for task in tasks], "tools": []})
         resource_plan = {
             "estimated_seconds": estimated_time,
             "tool_budget": len(recommended_tools),
@@ -45,6 +87,9 @@ class Planner(BaseAgent):
                 "estimated_seconds": estimated_time,
                 "resource_plan": resource_plan,
                 "response_mode": "analysis",
+                "planning_source": planning_source,
+                "search_queries": search_queries,
+                "estimate_kind": "static_budget_not_measured",
             },
             confidence=min(0.62 + complexity * 0.3, 0.96),
         )
@@ -65,7 +110,7 @@ class Planner(BaseAgent):
     def _rewrite_query(self, query: str, history: List[Dict[str, Any]]) -> str:
         if history:
             recent_topic = history[-1].get("query", "").strip()
-            if recent_topic and len(query) < 32:
+            if recent_topic and len(query) < 80 and re.search(r"它|这个|上述|刚才|继续|那[么个]|其", query):
                 return f"{query}（结合上轮问题：{recent_topic}）"
         return query
 
@@ -152,7 +197,7 @@ class Planner(BaseAgent):
                     "type": "retrieval",
                     "description": "检索系统能力、协议支持和集成特性。",
                     "dependencies": ["task_understand"],
-                    "tools": ["project_capability_lookup", "knowledge_base_search"],
+                    "tools": ["knowledge_base_search"],
                     "estimated_seconds": 2,
                     "resources": {"protocols": ["mcp", "function_calling"]},
                 }

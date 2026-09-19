@@ -8,6 +8,17 @@ export interface ImageAttachment {
   data_url: string
 }
 export interface Source {
+  kind?: string
+  knowledge_base_id?: string
+  document_id?: string
+  chunk_id?: string
+  version?: string
+  document_name?: string
+  page?: number | null
+  heading?: string
+  start?: number
+  end?: number
+  original_available?: boolean
   citation_id: string
   source: string
   score?: number
@@ -38,6 +49,20 @@ export interface QueryResult {
   routing?: { route?: string; intent?: string; reasoning?: string }
   critic_feedback?: string
   critic_suggestions?: string[]
+  timing?: { first_delta_ms: number | null; total_ms: number }
+  evaluation?: {
+    evaluation_kind: string
+    issues: string[]
+    revision_count: number
+    unresolved: boolean
+  }
+  retrieval_plan?: {
+    knowledge_base_id?: string
+    search_scope: string
+    selected_tools: string[]
+    query_variants: string[]
+    stop_reason: string
+  }
   tool_calls?: ToolCall[]
   execution_trace?: ExecutionEvent[]
   messages?: Message[]
@@ -52,6 +77,7 @@ export interface Message {
   status?: RunStatus
   result?: QueryResult
   notice?: string
+  phase?: string
 }
 export interface SessionSummary {
   session_id: string
@@ -113,7 +139,11 @@ export interface QueryRequest {
   run_id: string
   model_profile: string
   images: ImageAttachment[]
-  context: { thinking_mode: string }
+  context: {
+    thinking_mode: string
+    search_scope?: 'auto' | 'local' | 'web' | 'all'
+    knowledge_base_id?: string
+  }
 }
 export type EventPayloads = {
   started: { mode: 'live' }

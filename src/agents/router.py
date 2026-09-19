@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from models import build_model_client
@@ -34,7 +36,16 @@ class Router(BaseAgent):
         query = input_data.query.strip()
         has_images = bool(context.get("images") or context.get("attachments"))
         classification = self._rule_based_classification(query, has_images)
-        should_use_llm = self.use_llm and not has_images and thinking_mode not in ("quick", "retrieval", "deep")
+        scope = context.get("search_scope", "auto")
+        if context.get("knowledge_base_id"):
+            scope = "all" if scope == "all" else "local"
+        # Clear commands should not pay for an additional model round trip.
+        clear_intent = classification["intent"] in {"math", "weather", "web_search", "capability", "code", "analysis"}
+        greeting = bool(re.fullmatch(r"(?:你好|您好|谢谢|再见|hello|hi)[！!。\s]*", query, re.I))
+        should_use_llm = (self.use_llm and not has_images and scope == "auto"
+                          and thinking_mode not in ("quick", "retrieval", "deep")
+                          and not clear_intent and not greeting and not classification.get("explicit_intent")
+                          and classification["intent"] == "chat" and len(query) > 12)
         if should_use_llm:
             classification = await self._classify_with_llm(query, context, input_data.history, classification)
 
@@ -42,7 +53,11 @@ class Router(BaseAgent):
         complexity = classification["complexity"]
         explicit_intent = classification.get("explicit_intent")
         intent = "vision" if has_images else classification["intent"]
-        if thinking_mode in ("quick", "retrieval", "deep"):
+        if scope in {"local", "web", "all"} and (thinking_mode != "quick" or context.get("knowledge_base_id")) and (not has_images or context.get("knowledge_base_id")):
+            intent = "web_search" if scope == "web" else "fact"
+            route = self._force_route("deep" if thinking_mode == "deep" else "retrieval", intent)
+            route["reasoning"] = "按用户选择的检索范围执行。"
+        elif thinking_mode in ("quick", "retrieval", "deep"):
             route = self._force_route(thinking_mode, intent)
         else:
             route = self._pick_route(query, dialog_type, complexity, explicit_intent, intent)
@@ -67,6 +82,9 @@ class Router(BaseAgent):
                 "router_provider": classification.get("provider"),
                 "router_model": classification.get("model_name"),
                 "router_error": classification.get("error"),
+                "search_scope": scope,
+                "classification_model_called": should_use_llm,
+                "model_tier_applied": False,
             },
             confidence=self._output_confidence(complexity, classification),
         )
@@ -121,7 +139,10 @@ class Router(BaseAgent):
             f"最近对话历史：{self._format_history(history)}\n"
             f"用户问题：{query}"
         )
-        response = await client.generate(system_prompt, user_prompt)
+        try:
+            response = await asyncio.wait_for(client.generate(system_prompt, user_prompt), self.llm_timeout_seconds)
+        except (TimeoutError, ValueError):
+            return self._classification_fallback(fallback, "路由分类超时或不可用")
         if response.error:
             return self._classification_fallback(fallback, response.error)
 
@@ -234,7 +255,7 @@ class Router(BaseAgent):
 
     def _identify_dialog_type(self, query: str) -> str:
         lowered = query.lower()
-        if any(token in lowered for token in ["你好", "hello", "hi", "在吗", "聊聊", "你是谁", "谢谢"]):
+        if re.fullmatch(r"(?:你好|您好|hello|hi|在吗|聊聊|你是谁|谢谢)[！!？?。\s]*", lowered):
             return "casual_chat"
         return "task_oriented"
 
@@ -260,13 +281,13 @@ class Router(BaseAgent):
             return "fast_answer"
         if any(token in lowered for token in ["只用工具", "只查资料", "tool only", "检索一下"]):
             return "retrieval_only"
-        if any(symbol in query for symbol in ["+", "-", "*", "/"]):
+        if re.search(r"\d\s*[+*/-]\s*\d", query):
             return "tool_math"
         return None
 
     def _detect_intent(self, query: str, dialog_type: str) -> str:
         lowered = query.lower()
-        if any(symbol in query for symbol in ["+", "-", "*", "/"]):
+        if re.search(r"\d\s*[+*/-]\s*\d", query):
             return "math"
         if any(token in lowered for token in ["天气", "气温", "温度", "下雨", "weather", "forecast"]):
             return "weather"

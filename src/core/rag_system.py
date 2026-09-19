@@ -80,6 +80,9 @@ class AgenticRAGSystem:
             result = await self._query(user_query, context, execution.session_id)
             result["run_id"] = execution.run_id
             result["execution_trace"] = self.memory.get_events(execution.session_id, execution.run_id)
+            result["timing"] = {"first_delta_ms": execution.first_delta_ms,
+                                "total_ms": round((time.perf_counter() - execution.started_clock) * 1000, 2)}
+            result["_turn"]["result"]["timing"] = result["timing"]
             stored = {k: v for k, v in result.items() if k not in {"messages", "execution_trace", "capabilities", "_turn"}}
             self.memory.complete_run(execution.run_id, public_data(stored), public_data(result.pop("_turn")))
             if (result.get("model_provider") in {"openai", "deepseek", "ollama", "xinference"}
@@ -252,6 +255,8 @@ class AgenticRAGSystem:
             retrieval.metadata.get("documents", []),
             history,
             session_id,
+            retrieval=retrieval,
+            retrieval_context=context,
             images=(context or {}).get("images", []),
             model_config=(context or {}).get("model_config"),
             model_profile=(context or {}).get("model_profile"),
@@ -282,12 +287,15 @@ class AgenticRAGSystem:
         self._log_execution(session_id, "planning", plan.metadata)
         self._ensure_not_cancelled(session_id)
         retrieval_context = {
+            **(context or {}),
             "model_config": (context or {}).get("model_config"),
             "model_profile": (context or {}).get("model_profile"),
             "tools": plan.metadata.get("recommended_tools", []),
             "strategy": plan.metadata.get("strategy"),
             "intent": plan.metadata.get("intent"),
             "response_mode": "analysis",
+            "search_queries": plan.metadata.get("search_queries", [query]),
+            "retrieval_rounds": plan.metadata.get("resource_plan", {}).get("retrieval_rounds", 1),
         }
         retrieval = await self.retriever.execute(
             AgentInput(
@@ -324,6 +332,8 @@ class AgenticRAGSystem:
             retrieval.metadata.get("documents", []),
             history,
             session_id,
+            retrieval=retrieval,
+            retrieval_context=retrieval_context,
             images=(context or {}).get("images", []),
             model_config=(context or {}).get("model_config"),
             model_profile=(context or {}).get("model_profile"),
@@ -348,12 +358,14 @@ class AgenticRAGSystem:
         images: Optional[List[Dict[str, Any]]] = None,
         model_config: Optional[Dict[str, Any]] = None,
         model_profile: Optional[str] = None,
+        retrieval: Optional[AgentOutput] = None,
+        retrieval_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, AgentOutput]:
         images = images or []
         critic = await self.critic.execute(
             AgentInput(
                 query=query,
-                context={"content": generation.content, "documents": documents, "mode": generation.metadata.get("response_mode")},
+                context={"content": generation.content, "documents": documents, "source_map": generation.metadata.get("source_map", []), "mode": generation.metadata.get("response_mode")},
                 history=history,
                 session_id=session_id,
             )
@@ -361,16 +373,34 @@ class AgenticRAGSystem:
         self._log_execution(session_id, "critic", critic.metadata)
         current_generation = generation
         retries = 0
-        while critic.metadata.get("need_revision") and retries < self.max_retries:
+        while critic.metadata.get("need_revision") and retries < min(self.max_retries, 1):
             self._ensure_not_cancelled(session_id)
             retries += 1
             self._log_execution(session_id, f"revision_{retries}", critic.metadata)
+            if critic.metadata.get("need_retrieval_retry") and retrieval is not None:
+                previous = retrieval.metadata.get("retrieval_plan", {}).get("query_variants", [])
+                refined = self.retriever._rewrite_for_retrieval(query, "fact", 1, previous)
+                calls = retrieval.metadata.get("tool_calls", [])
+                if (refined not in previous and retrieval.metadata.get("attempt_count", 0) < self.retriever.max_attempts
+                        and any(call.get("status") == "success" for call in calls)):
+                    retry = await self.retriever.execute(AgentInput(query=refined, history=history, session_id=session_id,
+                        context={**(retrieval_context or {}), "model_config": model_config,
+                                 "search_queries": [refined], "retrieval_rounds": 1}))
+                    documents = retry.metadata.get("documents", [])
+                    retrieval.metadata["documents"] = documents
+                    retrieval.metadata["tool_calls"] = [*calls, *retry.metadata.get("tool_calls", [])]
+                    retrieval.metadata["tool_errors"] = [c for c in retrieval.metadata["tool_calls"] if c.get("status") != "success"]
+                    retrieval.metadata["retrieval_quality"] = retry.metadata.get("retrieval_quality")
+                    retrieval.metadata["retrieval_plan"]["critic_retry"] = retry.metadata.get("retrieval_plan")
+                    self._log_execution(session_id, "critic_retrieval_retry", {"reason": "missing_evidence", "query": refined})
             current_generation = await self.generator.execute(
                 AgentInput(
                     query=query,
                     context={
                         "documents": documents,
                         "critique": critic.metadata,
+                        "retrieval_plan": retrieval.metadata.get("retrieval_plan", {}) if retrieval else {},
+                        "tool_calls": retrieval.metadata.get("tool_calls", []) if retrieval else [],
                         "response_mode": generation.metadata.get("response_mode"),
                         "images": images,
                         "model_config": model_config,
@@ -385,6 +415,7 @@ class AgenticRAGSystem:
                     query=query,
                     context={
                         "content": current_generation.content,
+                        "source_map": current_generation.metadata.get("source_map", []),
                         "documents": documents,
                         "mode": current_generation.metadata.get("response_mode"),
                     },
@@ -393,6 +424,9 @@ class AgenticRAGSystem:
                 )
             )
             self._log_execution(session_id, f"critic_revision_{retries}", critic.metadata)
+        critic.metadata["revision_count"] = retries
+        critic.metadata["revision_limit"] = min(self.max_retries, 1)
+        critic.metadata["unresolved"] = bool(critic.metadata.get("need_revision"))
         return {"generation": current_generation, "critic": critic}
 
     def _build_result(
@@ -417,6 +451,7 @@ class AgenticRAGSystem:
             "response_mode": generation.metadata.get("response_mode"),
             "critic_feedback": critic.metadata.get("feedback"),
             "critic_suggestions": critic.metadata.get("suggestions", []),
+            "evaluation": critic.metadata,
         }
 
     def cancel_session(self, session_id: str) -> bool:
@@ -504,27 +539,27 @@ class AgenticRAGSystem:
             },
             {
                 "title": "查询理解与任务分解",
-                "status": "met",
-                "status_label": "已具备",
-                "note": "支持意图识别、复杂度评估、查询改写、任务拆解和资源规划。",
+                "status": "partial",
+                "status_label": "部分满足",
+                "note": "分层路由与结构化检索子问题；规划失败有显式模板降级。资源估计是静态预算，不是预测耗时；轻重模型标签尚不自动切换模型。",
             },
             {
                 "title": "工具使用与扩展",
                 "status": "met" if has_mcp and has_function_calling else "partial",
                 "status_label": "已具备" if has_mcp and has_function_calling else "部分满足",
-                "note": f"当前工具协议覆盖：{', '.join(sorted(protocols)) or '无'}；支持参数校验、超时控制和统一结果格式。",
+                "note": f"已注册协议：{', '.join(sorted(protocols)) or '无'}。默认按意图选择，Function Calling 可选；MCP 为示例服务，注册不代表外部执行成功。同步工具取消仍有边界。",
             },
             {
                 "title": "多源检索与动态决策",
-                "status": "met" if has_vector and has_graph and has_live_data else "partial",
-                "status_label": "已具备" if has_vector and has_graph and has_live_data else "部分满足",
-                "note": "支持本地向量知识库、知识图谱、联网搜索、实时天气查询和自适应多轮检索。",
+                "status": "partial",
+                "status_label": "部分满足",
+                "note": "本地 BM25 + Chroma 哈希向量排名融合，非语义嵌入模型；图谱是配置关系。联网搜索依赖外部服务；有轮次预算和去重停止条件。",
             },
             {
                 "title": "答案评审与闭环优化",
-                "status": "met",
-                "status_label": "已具备",
-                "note": "Critic 会对答案进行打分，并在复杂问题中触发多轮修订。",
+                "status": "partial",
+                "status_label": "部分满足",
+                "note": "检查来源编号、正文引用与证据边界，最多修订一次；预算内可触发不同查询的重检索。结构检查不等于事实准确率。",
             },
             {
                 "title": "对话管理与执行可视化",

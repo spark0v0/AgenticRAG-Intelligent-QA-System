@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EvidenceButton from '../components/knowledge/EvidenceButton.vue'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { requestJson } from '../api/client'
@@ -351,6 +352,7 @@ function refresh() {
             /></a>
             <h3 v-else>{{ sourceLabel(source.source) }}</h3>
             <p>{{ source.excerpt || '此来源未保存证据片段。' }}</p>
+            <EvidenceButton :source="source" />
           </article>
           <p v-if="!sources.length" class="empty-hint">本轮未记录来源；直接回答可能不经过检索。</p>
         </div>
@@ -365,7 +367,9 @@ function refresh() {
           />
           <p v-else class="empty-hint">本轮尚未保存回答。</p>
           <div v-if="run.result?.critic_feedback" class="assessment">
-            <strong>评审参考 · 规则评分</strong>
+            <strong>{{
+              run.result?.evaluation ? '证据检查 · 非事实准确率' : '历史评审参考 · 规则评分'
+            }}</strong>
             <p>{{ run.result.critic_feedback }}</p>
           </div>
         </div>

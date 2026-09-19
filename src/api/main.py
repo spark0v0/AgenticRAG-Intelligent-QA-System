@@ -20,11 +20,15 @@ load_dotenv(ROOT / ".env")
 
 from api.workbench import router, systems
 from api.providers import router as provider_router
+from api.knowledge import router as knowledge_router, UploadLimitMiddleware
+from knowledge.service import get_service
 
 
 @asynccontextmanager
 async def lifespan(app):
+    knowledge = get_service()
     yield
+    await asyncio.to_thread(knowledge.close)
     tasks = [task for system in systems.values() for task in list(system._run_tasks.values())]
     for task in tasks:
         task.cancel()
@@ -36,6 +40,8 @@ app = FastAPI(title="AgenticRAG 智能问答工作台", version="4.0.0", lifespa
 app.include_router(router)
 app.include_router(router, prefix="/api", include_in_schema=False)
 app.include_router(provider_router, prefix="/api")
+app.include_router(knowledge_router, prefix="/api")
+app.add_middleware(UploadLimitMiddleware)
 
 
 @app.exception_handler(RequestValidationError)
@@ -62,7 +68,7 @@ async def favicon():
 @app.get("/{path:path}", include_in_schema=False)
 async def frontend(path: str):
     # Only known client routes get the SPA; misspelled API routes remain 404.
-    if path not in {"", "chat", "tools", "system", "providers", "runs"}:
+    if path not in {"", "chat", "tools", "system", "providers", "runs", "knowledge"}:
         raise HTTPException(404, "Not found")
     if (DIST / "index.html").exists():
         return FileResponse(DIST / "index.html")

@@ -1,0 +1,105 @@
+{
+  "fixture_only": true,
+  "model": "BAAI/bge-small-zh-v1.5",
+  "dimensions": 512,
+  "documents": {
+    "差旅制度.md": "# 差旅报销\n出差人员应在返回后五个工作日内提交发票与行程单，经部门负责人审批后由财务付款。",
+    "账号安全.md": "# 找回账号\n忘记登录密码时，在登录页面选择重置密码，通过注册邮箱收到的验证码完成身份验证后设置新密码。",
+    "项目交付.md": "# 发布要求\n交付前必须完成类型检查、生产构建和核心冒烟验证。上线后监控服务日志，出现故障时回退上一版本。"
+  },
+  "comparisons": [
+    {
+      "query": "差旅报销需要什么材料？",
+      "expected": "差旅制度.md",
+      "mode": "keyword",
+      "sources": [
+        "差旅制度.md"
+      ],
+      "elapsed_ms": 11.3
+    },
+    {
+      "query": "差旅报销需要什么材料？",
+      "expected": "差旅制度.md",
+      "mode": "semantic",
+      "sources": [
+        "差旅制度.md",
+        "项目交付.md"
+      ],
+      "elapsed_ms": 20.4
+    },
+    {
+      "query": "差旅报销需要什么材料？",
+      "expected": "差旅制度.md",
+      "mode": "hybrid",
+      "sources": [
+        "差旅制度.md",
+        "项目交付.md"
+      ],
+      "elapsed_ms": 15.7
+    },
+    {
+      "query": "忘了口令怎么恢复登录？",
+      "expected": "账号安全.md",
+      "mode": "keyword",
+      "sources": [
+        "账号安全.md"
+      ],
+      "elapsed_ms": 6.9
+    },
+    {
+      "query": "忘了口令怎么恢复登录？",
+      "expected": "账号安全.md",
+      "mode": "semantic",
+      "sources": [
+        "账号安全.md",
+        "项目交付.md",
+        "差旅制度.md"
+      ],
+      "elapsed_ms": 14.7
+    },
+    {
+      "query": "忘了口令怎么恢复登录？",
+      "expected": "账号安全.md",
+      "mode": "hybrid",
+      "sources": [
+        "账号安全.md",
+        "项目交付.md",
+        "差旅制度.md"
+      ],
+      "elapsed_ms": 15.0
+    },
+    {
+      "query": "交付之前要验证哪些内容？",
+      "expected": "项目交付.md",
+      "mode": "keyword",
+      "sources": [
+        "项目交付.md",
+        "账号安全.md"
+      ],
+      "elapsed_ms": 8.0
+    },
+    {
+      "query": "交付之前要验证哪些内容？",
+      "expected": "项目交付.md",
+      "mode": "semantic",
+      "sources": [
+        "项目交付.md",
+        "差旅制度.md",
+        "账号安全.md"
+      ],
+      "elapsed_ms": 17.1
+    },
+    {
+      "query": "交付之前要验证哪些内容？",
+      "expected": "项目交付.md",
+      "mode": "hybrid",
+      "sources": [
+        "项目交付.md",
+        "账号安全.md",
+        "差旅制度.md"
+      ],
+      "elapsed_ms": 17.8
+    }
+  ],
+  "note": "3 个固定小样本，仅观察命中排序与耗时，不能推导真实召回率或提升比例。"
+}

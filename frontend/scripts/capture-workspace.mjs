@@ -16,7 +16,7 @@ try {
   for (const path of ['settings/providers', 'sessions', 'runs']) {
     const response = await page.request.get(`${baseURL}/api/${path}`)
     expect(response.ok()).toBe(true)
-    expect((await response.json()).items).toHaveLength(0)
+    expect((await response.json()).items.length, 'Capture requires an empty workspace').toBe(0)
   }
   const status = await (await page.request.get(`${baseURL}/api/status`)).json()
   expect(status.model_profiles.every((profile) => !profile.configured)).toBe(true)

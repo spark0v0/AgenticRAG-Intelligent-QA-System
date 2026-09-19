@@ -80,10 +80,24 @@ def query_context(request: QueryRequest, system: AgenticRAGSystem) -> dict:
     if not client.is_available:
         raise HTTPException(503, "模型尚未配置凭据，请在模型供应商页面添加配置")
     # Public requests may select server profiles, never inject provider credentials/configuration.
-    allowed = {"thinking_mode", "location", "retrieval_mode", "strategy"}
+    allowed = {"thinking_mode", "location", "retrieval_mode", "strategy", "search_scope", "knowledge_base_id"}
     context = {k: v for k, v in (request.context or {}).items() if k in allowed}
+    if context.get("search_scope", "auto") not in {"auto", "local", "web", "all"}:
+        raise HTTPException(422, "不支持的检索范围")
     if context.get("thinking_mode") not in {None, "", "quick", "retrieval", "deep"}:
         raise HTTPException(422, "不支持的思考模式")
+    kb_id = context.get("knowledge_base_id")
+    if kb_id:
+        if not isinstance(kb_id, str) or len(kb_id) > 64:
+            raise HTTPException(422, "知识库标识无效")
+        from knowledge.service import get_service
+        try:
+            get_service().library(kb_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if context.get("search_scope") == "web" or context.get("thinking_mode") == "quick":
+            raise HTTPException(422, "已选择知识库，请使用本地或组合检索，不能跳过知识库直接回答")
+        context["search_scope"] = "all" if context.get("search_scope") == "all" else "local"
     context["model_profile"] = profile
     if request.images:
         if not client.supports_vision:

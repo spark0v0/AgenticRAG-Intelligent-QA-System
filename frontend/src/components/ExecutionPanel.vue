@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EvidenceButton from './knowledge/EvidenceButton.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import type { StageEvent, ToolEvent } from '../types'
@@ -55,6 +56,13 @@ const tools = computed(() => {
   return [...map.values()]
 })
 const result = computed(() => store.selectedMessage?.result)
+const stopLabels: Record<string, string> = {
+  sufficient_evidence: '达到检索阈值',
+  tools_unavailable: '工具不可用，停止重复调用',
+  duplicate_query: '没有新的查询',
+  no_new_evidence: '没有新增证据',
+  budget_exhausted: '达到检索轮次上限',
+}
 const sources = computed(
   () =>
     result.value?.source_map ??
@@ -146,6 +154,22 @@ function format(value: unknown) {
         </button>
       </div>
       <div class="detail-content">
+        <details v-if="result?.retrieval_plan" class="raw-details">
+          <summary>检索决策与停止原因</summary>
+          <p>查询：{{ result.retrieval_plan.query_variants.join(' → ') }}</p>
+          <p>工具：{{ result.retrieval_plan.selected_tools.join('、') }}</p>
+          <p>
+            停止原因：{{
+              stopLabels[result.retrieval_plan.stop_reason] || result.retrieval_plan.stop_reason
+            }}
+          </p>
+        </details>
+        <p v-if="result?.timing" class="empty-hint">
+          后端总耗时 {{ (result.timing.total_ms / 1000).toFixed(1) }}s
+          <template v-if="result.timing.first_delta_ms != null">
+            · 首增量 {{ (result.timing.first_delta_ms / 1000).toFixed(1) }}s</template
+          >
+        </p>
         <template v-if="tab === 'trace'">
           <p v-if="!stages.length" class="empty-hint">
             {{ store.busy ? '正在建立本轮执行记录…' : '此历史记录没有保存执行详情。' }}
@@ -196,10 +220,23 @@ function format(value: unknown) {
           </div>
           <div v-if="result?.evaluation_score != null" class="assessment">
             <div>
-              <AppIcon name="check" :size="16" /><strong>评审参考</strong
-              ><span>{{ (result.evaluation_score * 100).toFixed(0) }} / 100</span>
+              <AppIcon name="check" :size="16" /><strong>{{
+                result.evaluation ? '证据检查' : '历史评审参考'
+              }}</strong>
+              <span v-if="result.evaluation">{{
+                result.evaluation.issues.length
+                  ? `${result.evaluation.issues.length} 项待核实`
+                  : '结构检查通过'
+              }}</span>
+              <span v-else>{{ (result.evaluation_score * 100).toFixed(0) }} / 100</span>
             </div>
-            <p>基于现有规则的质量评分，非事实准确率。</p>
+            <p>
+              {{
+                result.evaluation
+                  ? '检查引用编号、正文关联和证据边界，不代表事实核验通过。'
+                  : '历史规则评分，非事实准确率。'
+              }}
+            </p>
             <ul v-if="result.critic_suggestions?.length">
               <li v-for="tip in result.critic_suggestions" :key="tip">{{ tip }}</li>
             </ul>
@@ -228,8 +265,8 @@ function format(value: unknown) {
               >{{ sourceLabel(source.source) }}<AppIcon name="external" :size="12" /></a
             ><strong v-else>{{ sourceLabel(source.source) }}</strong>
             <p>{{ source.excerpt || '当前记录只有来源标识，没有保存证据片段。' }}</p>
-          </article></template
-        >
+            <EvidenceButton :source="source" /></article
+        ></template>
         <template v-else
           ><p v-if="!tools.length" class="empty-hint">本轮尚无工具调用记录。</p>
           <details v-for="event in tools" :key="event.data.call_id" class="tool-call">

@@ -2,9 +2,11 @@
 
 import asyncio
 import re
+import json
 from typing import Any, Dict, List, Tuple
 
 from models import build_model_client
+from retrieval.hybrid_store import retrieval_query
 from tools.builtin import build_builtin_tools, is_code_like, tokenize
 from tools.registry import ToolRegistry
 from utils.execution import current_execution
@@ -30,7 +32,7 @@ class Retriever(BaseAgent):
         if not self.validate_input(input_data):
             raise ValueError("Invalid input data")
 
-        query = input_data.query.strip()
+        query = retrieval_query(input_data.query)
         context = input_data.context or {}
         intent = self._infer_intent(query, context)
         strategy = str(context.get("strategy") or self.default_strategy)
@@ -40,20 +42,44 @@ class Retriever(BaseAgent):
         tool_calls: List[Dict[str, Any]] = []
         query_variants: List[str] = []
         latest_quality = 0.0
+        executed = set()
+        stop_reason = "budget_exhausted"
+        budget = max(1, min(self.max_attempts, int(context.get("retrieval_rounds", 2))))
+        planned_queries = list(dict.fromkeys(context.get("search_queries") or [query]))[:3]
 
-        for attempt in range(self.max_attempts):
+        for attempt in range(budget):
             execution = current_execution.get()
             if execution:
                 execution.emit("retrieval_round", {"round": attempt + 1, "strategy": strategy})
             variant = self._rewrite_for_retrieval(query, intent, attempt, query_variants)
+            if variant in query_variants:
+                stop_reason = "duplicate_query"
+                break
             query_variants.append(variant)
-            round_plan = self._build_round_plan(variant, intent, selected_tools, context)
+            round_plan = []
+            for search_query in (planned_queries if attempt == 0 else [variant]):
+                for step in self._build_round_plan(search_query, intent, selected_tools, context):
+                    identity = json.dumps(step, sort_keys=True, ensure_ascii=False)
+                    if identity not in executed:
+                        executed.add(identity)
+                        round_plan.append(step)
+            if not round_plan:
+                stop_reason = "duplicate_query"
+                break
             round_documents, round_calls = await self._execute_round(round_plan, strategy)
+            previous_count = len(self._rank_results(query, all_documents, intent))
             all_documents.extend(round_documents)
             tool_calls.extend(round_calls)
             ranked = self._rank_results(query, all_documents, intent)[: self.max_results]
             latest_quality = self._assess_quality(ranked, intent)
             if ranked and (intent in {"math", "weather", "web_search"} or latest_quality >= self.quality_threshold):
+                stop_reason = "sufficient_evidence"
+                break
+            if round_calls and all(call["status"] != "success" for call in round_calls):
+                stop_reason = "tools_unavailable"
+                break
+            if attempt and len(self._rank_results(query, all_documents, intent)) <= previous_count:
+                stop_reason = "no_new_evidence"
                 break
 
         ranked = self._rank_results(query, all_documents, intent)[: self.max_results]
@@ -64,6 +90,12 @@ class Retriever(BaseAgent):
             "selected_tools": selected_tools,
             "query_variants": query_variants,
             "selector": selector_meta,
+            "search_scope": context.get("search_scope", "auto"),
+            "knowledge_base_id": context.get("knowledge_base_id"),
+            "library_states": [call.get("metadata", {}).get("state", "error") for call in tool_calls if call["tool"] == "library_search"],
+            "search_queries": planned_queries,
+            "round_budget": budget,
+            "stop_reason": stop_reason,
         }
 
         return AgentOutput(
@@ -102,14 +134,33 @@ class Retriever(BaseAgent):
         return "fact"
 
     async def _select_tools(self, query: str, intent: str, context: Dict[str, Any]) -> Tuple[List[str], Dict[str, Any]]:
+        if context.get("knowledge_base_id"):
+            tools = ["library_search"]
+            if context.get("search_scope") == "all":
+                tools.append("web_search")
+            return tools, {"mode": "knowledge_library", "knowledge_base_id": context["knowledge_base_id"], "used_function_calling": False}
+        scope_tools = {"local": ["knowledge_base_search", "knowledge_graph_search"],
+                       "web": ["web_search"], "all": ["knowledge_base_search", "web_search"]}
+        scope = context.get("search_scope", "auto")
+        if scope in scope_tools:
+            return scope_tools[scope], {"mode": "user_scope", "used_function_calling": False}
         hinted_tools = [tool for tool in context.get("tools") or [] if self.registry.get(tool)]
         if hinted_tools:
             return hinted_tools[: self.max_selected_tools], {"mode": "planner_hint", "used_function_calling": False}
 
+        if self.config.get("tool_selection", "policy") != "model":
+            return self._fallback_tools(intent)[:self.max_selected_tools], {
+                "mode": "intent_policy", "used_function_calling": False}
+
         available_schemas = self.registry.export_function_schemas()
         model_config = context.get("model_config")
         selector = build_model_client(model_config) if model_config else self.model_client
-        selection = await selector.select_tools(query, available_schemas, max_tools=self.max_selected_tools)
+        try:
+            selection = await asyncio.wait_for(
+                selector.select_tools(query, available_schemas, max_tools=self.max_selected_tools),
+                float(self.config.get("selector_timeout_seconds", 5)))
+        except (TimeoutError, ValueError):
+            return self._fallback_tools(intent), {"mode": "policy_after_selector_failure", "used_function_calling": False}
         selected = [name for name in selection.tool_names if self.registry.get(name)]
         if selected:
             return selected, {
@@ -131,28 +182,18 @@ class Retriever(BaseAgent):
         if intent == "web_search":
             return ["web_search"]
         if intent == "capability":
-            return ["project_capability_lookup", "knowledge_base_search"]
+            return ["knowledge_base_search"]
         if intent == "analysis":
-            return ["knowledge_base_search", "knowledge_graph_search", "web_search"]
+            return ["knowledge_base_search", "knowledge_graph_search"]
         return ["knowledge_base_search", "knowledge_graph_search"]
 
     def _rewrite_for_retrieval(self, query: str, intent: str, attempt: int, previous: List[str]) -> str:
         if attempt == 0:
             return query
-        if intent == "analysis":
-            return f"{query} 核心能力 原理 结构化比较"
-        if intent == "code":
-            return f"{query} 实现 接口 代码 说明"
-        if intent == "capability":
-            return f"{query} 支持 能力 协议 LangChain MCP"
-        if intent == "weather":
-            location = self._extract_location(query)
-            return f"{location} 今日天气 温度 降水 风力"
-        if intent == "web_search":
-            return f"{query} 最新 资料 官方信息"
-        if intent == "fact":
-            return f"{query} 定义 介绍 关键点"
-        return query if query not in previous else f"{query} 详细说明"
+        # Retry with a shorter lexical query rather than repeatedly adding generic terms.
+        terms = [term for term in tokenize(query) if len(term) > 1]
+        compact = " ".join(dict.fromkeys(terms))[:300]
+        return compact or query
 
     def _build_round_plan(
         self,
@@ -172,6 +213,8 @@ class Retriever(BaseAgent):
                 payload = {"query": query, "location": context.get("location") or self._extract_location(query), "days": 1}
             elif tool_name == "web_search":
                 payload = {"query": query, "limit": min(self.max_results, 5)}
+            elif tool_name == "library_search":
+                payload = {"query": query, "knowledge_base_id": context["knowledge_base_id"], "limit": self.max_results}
             elif tool_name == "knowledge_base_search":
                 payload = {
                     "query": query,
@@ -188,10 +231,13 @@ class Retriever(BaseAgent):
         return plan
 
     async def _execute_round(self, plan: List[Dict[str, Any]], strategy: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        semaphore = asyncio.Semaphore(3)
+
         async def _run(step: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
             tool_name = step["tool"]
             try:
-                result = await self.registry.invoke(tool_name, step["payload"])
+                async with semaphore:
+                    result = await self.registry.invoke(tool_name, step["payload"])
                 metadata = result.get("metadata", {})
                 status = result.get("status", "success")
                 documents = result.get("documents", []) if status == "success" else []
@@ -236,7 +282,7 @@ class Retriever(BaseAgent):
         seen = set()
         for doc in documents:
             content = doc.get("content", "")
-            fingerprint = (doc.get("source"), content[:180])
+            fingerprint = (doc.get("metadata") or {}).get("chunk_id") or (doc.get("source"), content[:180])
             if fingerprint in seen:
                 continue
             seen.add(fingerprint)
@@ -244,16 +290,12 @@ class Retriever(BaseAgent):
             doc_terms = set(tokenize(content))
             overlap = len(query_terms.intersection(doc_terms))
             base_score = doc.get("score") or doc.get("similarity") or doc.get("relevance") or doc.get("confidence") or 0.0
-            score = float(base_score) + overlap * 0.06
+            score = float(base_score)
             source = str(doc.get("source", ""))
             metadata = doc.get("metadata") or {}
 
             if intent != "code" and is_code_like(content, source):
                 score -= 0.18
-            if source.lower().endswith((".md", ".txt")):
-                score += 0.08
-            if "readme" in source.lower() or "usage" in source.lower():
-                score += 0.12
             if source == "calculator":
                 score += 0.28
             if source == "weather_lookup":
@@ -262,8 +304,6 @@ class Retriever(BaseAgent):
                 score += 0.2
             if metadata.get("protocol") == "mcp" and intent == "capability":
                 score += 0.18
-            if metadata.get("backend") == "chroma_hybrid":
-                score += 0.08
 
             enriched = dict(doc)
             enriched["score"] = round(max(min(score, 1.0), 0.0), 4)
@@ -279,8 +319,7 @@ class Retriever(BaseAgent):
             return 0.94
         top_docs = documents[: min(4, len(documents))]
         avg_score = sum(doc.get("score", 0.0) for doc in top_docs) / len(top_docs)
-        source_diversity = len({doc.get("source") for doc in top_docs}) / len(top_docs)
-        return round(min(0.35 + avg_score * 0.5 + source_diversity * 0.15, 1.0), 4)
+        return round(min(avg_score, 1.0), 4)
 
     def _calculate_confidence(self, documents: List[Dict[str, Any]], quality: float) -> float:
         if not documents:

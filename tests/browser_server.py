@@ -12,12 +12,14 @@ from api.main import app
 from api.workbench import systems
 from api import providers
 from memory.provider_store import ProviderStore
+from knowledge import service as knowledge_service
 import uvicorn
 
 if __name__ == "__main__":
     client.AsyncOpenAI = fixture_client
     client.ModelClient.select_tools = select_fixture_tools
     with TemporaryDirectory(prefix="agenticrag-browser-") as directory:
+        knowledge_service._service = knowledge_service.KnowledgeService(Path(directory) / "knowledge")
         providers._store = ProviderStore(Path(directory) / "settings" / "providers.sqlite3")
         systems["live"] = AgenticRAGSystem(fixture_config(Path(directory)))
         uvicorn.run(app, host="127.0.0.1", port=8010)

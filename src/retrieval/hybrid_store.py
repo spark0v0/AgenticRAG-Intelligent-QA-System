@@ -14,7 +14,7 @@ import chromadb
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils.execution import public_data
 
-TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]{1,8}", re.UNICODE)
+TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+", re.UNICODE)
 CODE_HINT_RE = re.compile(
     r"(from\s+\w+\s+import|def\s+\w+\(|class\s+\w+|async\s+def|return\s+|print\(|#include|public\s+class)",
     re.IGNORECASE,
@@ -22,7 +22,21 @@ CODE_HINT_RE = re.compile(
 
 
 def tokenize(text: str) -> List[str]:
-    return [token.lower() for token in TOKEN_RE.findall(text or "")]
+    tokens = []
+    for token in TOKEN_RE.findall(text or ""):
+        if re.fullmatch(r"[\u4e00-\u9fff]+", token):
+            tokens.extend(token[i:i + 2] for i in range(max(1, len(token) - 1)))
+        else:
+            tokens.append(token.lower())
+    return tokens
+
+
+def retrieval_query(query: str) -> str:
+    """Remove common output instructions, retaining the question for retrieval."""
+    focused = re.sub(r"^(?:请)?(?:根据|基于)(?:本地)?(?:文档|资料|知识库)[，,\s]*", "", query.strip())
+    focused = re.sub(r"^(?:请)?(?:用|以)(?:一|两|三|\d+)(?:句话|句|点|条)(?:说明|概括|解释|介绍)?", "", focused)
+    focused = re.sub(r"[，,；;]?\s*(?:并|请)?(?:引用|标注|注明)(?:信息)?来源[。.!！\s]*$", "", focused)
+    return focused.strip(" ，,。.!！") or query
 
 
 def is_code_like(text: str, source: str) -> bool:
@@ -92,6 +106,12 @@ class HybridKnowledgeBase:
         self.collection = self.client.get_or_create_collection(name=self.collection_name)
         self.documents: List[Dict[str, Any]] = []
         self._load_or_build()
+        self._build_lexical_index()
+
+    def _build_lexical_index(self):
+        self._term_counts = [Counter(tokenize(doc["content"])) for doc in self.documents]
+        self._doc_frequency = Counter(term for counts in self._term_counts for term in counts)
+        self._average_length = sum(sum(c.values()) for c in self._term_counts) / max(1, len(self.documents))
 
     def search(
         self,
@@ -103,14 +123,24 @@ class HybridKnowledgeBase:
         retrieval_mode: str | None = None,
     ) -> List[Dict[str, Any]]:
         mode = (retrieval_mode or self.retrieval_mode).lower()
+        query = retrieval_query(query)
         if not query.strip():
             return []
 
         candidates: List[Dict[str, Any]] = []
+        ranks = {}
         if mode in {"vector", "hybrid"}:
-            candidates.extend(self._vector_search(query, max(limit * 2, 6)))
+            vector = self._vector_search(query, max(limit * 3, 12))
+            candidates.extend(vector)
+            for rank, item in enumerate(vector, 1):
+                key = (item["source"], item["metadata"].get("chunk_index", -1))
+                ranks.setdefault(key, {})["vector"] = rank
         if mode in {"lexical", "hybrid"}:
-            candidates.extend(self._lexical_search(query, max(limit * 2, 6)))
+            lexical = self._lexical_search(query, max(limit * 3, 12))
+            candidates.extend(lexical)
+            for rank, item in enumerate(lexical, 1):
+                key = (item["source"], item["metadata"].get("chunk_index", -1))
+                ranks.setdefault(key, {})["bm25"] = rank
 
         merged: Dict[tuple[str, int], Dict[str, Any]] = {}
         query_tokens = set(tokenize(query))
@@ -120,16 +150,13 @@ class HybridKnowledgeBase:
             key = (item["source"], item["metadata"].get("chunk_index", -1))
             doc_tokens = set(tokenize(item["content"]))
             overlap = len(query_tokens.intersection(doc_tokens))
-            score = float(item.get("similarity", 0.0))
+            # Hash vectors are lexical features, so zero-overlap hits are collisions.
+            if not overlap:
+                continue
+            coverage = overlap / max(1, len(query_tokens))
+            score = sum(1 / (60 + rank) for rank in ranks[key].values()) * 61 / (2 if mode == "hybrid" else 1)
 
-            if prefer_documents and not item["metadata"].get("is_code"):
-                score += 0.08
-            if item["metadata"].get("is_code"):
-                score -= 0.14
-            if item["metadata"].get("extension") in {".md", ".txt"}:
-                score += 0.05
-            if "readme" in item["source"].lower() or "usage" in item["source"].lower():
-                score += 0.08
+            score *= 0.5 + 0.5 * coverage
             if not include_code and item["metadata"].get("is_code") and overlap < 2:
                 score -= 0.22
             if any(token in query_text for token in ["\u4ee3\u7801", "code", "python", "bug"]) and item["metadata"].get("is_code"):
@@ -140,6 +167,9 @@ class HybridKnowledgeBase:
                 "metadata": {
                     **item["metadata"],
                     "keyword_overlap": overlap,
+                    "query_coverage": round(coverage, 4),
+                    "retrieval_ranks": json.dumps(ranks[key]),
+                    "fusion": "rrf_bm25_hash",
                 },
                 "similarity": round(max(min(score, 1.0), 0.0), 4),
             }
@@ -158,10 +188,14 @@ class HybridKnowledgeBase:
             "persist_dir": str(self.persist_dir),
             "retrieval_mode": self.retrieval_mode,
             "embedding": "hash",
+            "lexical": "bm25",
+            "fusion": "reciprocal_rank",
+            "tokenizer": "cjk_bigrams_latin_words",
         }
 
     def rebuild(self) -> Dict[str, Any]:
         self._rebuild_collection()
+        self._build_lexical_index()
         return self.stats()
 
     def _load_or_build(self) -> None:
@@ -281,18 +315,21 @@ class HybridKnowledgeBase:
             return []
 
         scored: List[Dict[str, Any]] = []
-        for doc in self.documents:
-            doc_tokens = Counter(tokenize(doc["content"]))
+        for doc, doc_tokens in zip(self.documents, self._term_counts):
             overlap = len(set(query_tokens).intersection(doc_tokens))
-            cosine = self._cosine_similarity(query_tokens, doc_tokens)
-            if cosine <= 0 and overlap <= 0:
+            if overlap <= 0:
                 continue
-            score = cosine + overlap * 0.05
+            length_ratio = sum(doc_tokens.values()) / max(1, self._average_length)
+            score = sum(
+                math.log(1 + (len(self.documents) - self._doc_frequency[t] + 0.5) / (self._doc_frequency[t] + 0.5))
+                * doc_tokens[t] * 2.5 / (doc_tokens[t] + 1.5 * (0.25 + 0.75 * length_ratio))
+                for t in query_tokens if doc_tokens[t]
+            )
             scored.append(
                 {
                     "content": doc["content"],
                     "source": doc["source"],
-                    "similarity": round(min(score, 1.0), 4),
+                    "similarity": round(score, 4),
                     "metadata": dict(doc["metadata"]),
                 }
             )
@@ -306,7 +343,8 @@ class HybridKnowledgeBase:
             "patterns": self.include_globs,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
-            "reader_version": 3,
+            "reader_version": 4,
+            "embedding_dimension": self.embedding_model.dimension,
             "max_document_chars": self.max_document_chars,
             "files": [
                 {

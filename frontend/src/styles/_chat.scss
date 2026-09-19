@@ -932,3 +932,38 @@
     line-height: 1.6;
   }
 }
+.search-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  border: 0;
+  padding: 0 0 10px;
+  margin: 0;
+  font-size: 13px;
+  legend {
+    padding: 0;
+    margin-bottom: 4px;
+  }
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    cursor: pointer;
+  }
+  input {
+    accent-color: var(--accent);
+  }
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+.answer-evidence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}

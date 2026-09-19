@@ -66,6 +66,8 @@ class CriticTool(BaseDifyTool):
         context = {
             "content": payload.get("answer", ""),
             "documents": payload.get("documents") or [],
+            "source_map": payload.get("source_map") or [],
+            "mode": payload.get("response_mode") or "grounded",
         }
         output = await self.system.critic.process(self._build_input(payload, context=context))
         return _serialize(output)

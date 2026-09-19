@@ -8,6 +8,16 @@ Vue 3 中文 AI 工作台，连接已有 Python/FastAPI AgenticRAG 执行链。�
 
 最新前端完善：供应商字段级校验与可定位的错误摘要；连接失败使用错误反馈，区分模型列表连通和生成验证。空会话集中输入、对话中输入区停靠；回答中的 `[S1]` 等已映射引用可定位证据。手机端运行分析采用「列表 → 详情 → 返回」，保留搜索和选择状态。样式按主题、公共控件和业务模块维护，不再叠加 `workspace.scss`。
 
+## 本地知识库（本轮新增）
+
+新增 `/knowledge`：创建/重命名/删除知识库，上传 TXT、Markdown、文本型 PDF，后台索引与重试/取消，限定资料范围问答，以及带文档版本、片段和实际页码的证据抽屉。真实中文 BGE 小模型在 CPU 本地运行，也提供明确标注的关键词模式，不以哈希向量冒充语义检索。
+
+当前项目已建立独立 `.venv`，无需依赖参考项目的 Python 环境。语义模型首次准备：`.venv\Scripts\python.exe scripts/prepare_embedding.py`；启动：`powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1`，访问 **http://127.0.0.1:8000/knowledge**。
+
+- [知识库启动、API、存储与重建说明](docs/knowledge-workbench.md)
+- [知识库验证记录](docs/knowledge-verification.md)
+- [知识库演示脚本、简历与面试材料](docs/knowledge-career.md)
+
 ## 安装与启动
 
 已验证环境：Windows / PowerShell、Node.js 24.19、npm 11.6、Python 3.13。使用现有 npm 锁文件，不混用 pnpm。前端要求 Node >=24.15；Python 直接依赖约束见 `requirements-verified.txt`，不是全量跨平台锁文件。
@@ -35,6 +45,8 @@ npm run dev
 访问 http://127.0.0.1:5173 。Vite 代理 `/api` 到 8000。端口占用时后端设置 `$env:PORT='8001'`；前端设置 `$env:VITE_API_TARGET='http://127.0.0.1:8001'` 并执行 `npm run dev -- --port 5174`。完整生产联动由 FastAPI 提供，`vite preview` 只作静态预览。
 
 ## 使用
+
+新增「检索范围」：自动、本地知识、联网搜索、本地 + 联网；快速回答跳过检索。深度分析生成有数量和超时限制的检索子问题。回答可查看证据、首增量时间及停止原因。完整核实见 [AgenticRAG 要求对照与改进](docs/agenticrag-audit.md)。
 
 1. 打开「模型供应商」，添加服务名称、协议、基础地址和 API Key。保存后检测连接，可发现模型，也可直接填写供应商文档中的模型 ID。配置流式/图片能力后保存并设为默认。连接检查只访问模型列表，不发送问答；接口已连接、凭据已配置、模型实际调用成功是三种不同状态。
 2. 新建会话，选择模型及处理模式，输入问题。Enter 发送、Shift+Enter 换行；中文组合输入不会误发送。常用问题只填入输入框，由用户确认发送。
@@ -86,6 +98,7 @@ npm run smoke:browser
 
 ## 交付材料
 
+- [AgenticRAG 要求对照、调用链改进与使用](docs/agenticrag-audit.md)
 - [前端设计、组件与生命周期](docs/frontend-design.md)
 - [接口、SSE 协议、存储与迁移](docs/api-and-storage.md)
 - [实际验证、性能数据与限制](docs/verification.md)
@@ -96,3 +109,17 @@ npm run smoke:browser
 原生页面保留 `/legacy`，API 文档在 `/docs`。Router、Planner、Retriever、Generator、Critic、HashEmbeddings/Chroma 检索、配置式知识图谱及 LangChain Runnable 是已有业务基础。MCP 是示例服务，Dify 仅有包装代码，不能据此声称完整插件发布或商业上线。
 
 本仓库来自 [spark0v0/AgenticRAG](https://github.com/spark0v0/AgenticRAG) 的工作区改造版本，以独立初始提交发布。凭据、运行数据、测试产物和本机缓存被 Git 忽略。
+# Tavily 联网搜索
+
+DeepSeek 负责生成，网页检索需要独立搜索服务。后端支持 Tavily：在项目根目录的本机 `.env` 中设置以下变量，然后重启 FastAPI。
+
+```dotenv
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=你的搜索服务密钥
+```
+
+`.env` 被 Git 忽略；不要放入 `frontend/.env`、截图或提交中。已有 `.env` 请编辑追加，不覆盖其他配置。供应商页面目前仅管理模型，搜索凭据通过后端配置。
+
+在问答输入区选择「联网搜索」或「本地 + 联网」，查看来源和执行详情中的 `web_search`。使用 Tavily basic 搜索，返回网页片段交给当前模型生成，不使用搜索平台的生成答案；每次检索可能消耗 Tavily 额度。失败不自动切换供应商或重放请求。未指定 provider 时，有 Key 使用 Tavily，否则保留覆盖有限的免费百科/即时答案搜索；显式选择 Tavily 却缺 Key 时会提示未配置。
+
+已区分未配置、认证失败、请求/额度限制、超时、服务不可用及无匹配结果。不提供 Bing 接口兼容承诺，本轮只实现 Tavily。历史失败回答不会被自动重写，需要配置后手动发起新问题。

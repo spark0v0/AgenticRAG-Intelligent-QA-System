@@ -2,6 +2,8 @@
 
 ## 兼容与扩展
 
+执行链升级新增 `context.search_scope`（auto/local/web/all，默认 auto）；快速模式不检索，明确范围约束检索工具。`QueryResult` 新增 `evaluation`（证据结构检查、问题、修订次数、未解决状态）、`timing`（first_delta_ms 可为空、total_ms），`retrieval_plan` 增加查询、范围、轮次预算和停止原因。消息与 run 同时保存这些结果，旧记录缺字段时保持原显示。SSE 事件类型和草稿 generation 协议不变。Chroma 的分词版本变化会重建衍生索引，不删除原始文档或 SQLite；详情见 `agenticrag-audit.md`。
+
 旧 `/query`、`/status`、`/tools`、`/sessions`、`/sessions/{id}`、`/sessions/{id}/cancel`、`/visualization/{id}`、`/requirements-audit` 保留，增加等价 `/api` 前缀。仅接受省略 mode 或 `mode=live`；`mode=demo` 返回 422。前端不再发送 mode。
 
 `/tools` 同时是旧 API 与页面路径：浏览器 `Accept: text/html` 返回 SPA，其余客户端返回旧 JSON；`/api/tools` 永远返回 JSON。脚本调用旧 `/tools` 不应声明接收 HTML。
@@ -101,3 +103,8 @@ FastAPI 同源提供 SPA 与 API，无需跨域白名单。构建后启动服务
 浏览器启动只将 `rag-session-live` 迁移为 `rag-session`（已有新指针优先），移除 `rag-mode`、`rag-session-demo`、`rag-session-live`。不导入旧演示数据库。若用户曾自行将演示数据复制到真实库，系统无法可靠辨识其来源，不会擅自删记录。
 
 自动化夹具位于 `tests/workbench_fixtures.py`，只有测试服务导入；临时 SQLite/Chroma 与真实数据隔离。`tests/serve_real_smoke.py` 是人工执行的真实服务联调入口，读取现有模型档案，使用 `.cache/real-service-smoke/` 保存隔离记录；不会被 pytest 或 CI 自动启动。
+
+
+## 本轮知识库 API 与存储增量
+
+见 [本轮知识库 API 与存储增量](knowledge-workbench.md)。该记录区分既有能力、本轮新增能力、真实本地嵌入与隔离回答夹具。

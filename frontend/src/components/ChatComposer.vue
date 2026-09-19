@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { ElSelect, ElOption } from 'element-plus'
 import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/option/style/css'
 import { useWorkbench } from '../stores/workbench'
 import type { ImageAttachment } from '../types'
 import AppIcon from './AppIcon.vue'
+import { useKnowledge } from '../stores/knowledge'
 
 const store = useWorkbench()
+const knowledge = useKnowledge()
+const knowledgeError = ref('')
+const knowledgeController = new AbortController()
+onMounted(() => {
+  void knowledge.refresh(knowledgeController.signal).catch(() => {
+    if (!knowledgeController.signal.aborted) knowledgeError.value = '知识库列表暂时不可用'
+  })
+})
+onUnmounted(() => knowledgeController.abort())
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileBusy = ref(false)
 const readers = new Set<FileReader>()
@@ -84,6 +94,57 @@ function handleKey(event: KeyboardEvent) {
       {{ store.current.error }}
     </div>
     <div class="composer" :class="{ 'is-busy': store.busy }">
+      <fieldset class="search-scope" :disabled="store.busy || store.thinking === 'quick'">
+        <legend>检索范围</legend>
+        <label
+          v-for="scope in [
+            { value: 'auto', label: '自动' },
+            { value: 'local', label: '本地知识' },
+            { value: 'web', label: '联网搜索' },
+            { value: 'all', label: '本地 + 联网' },
+          ]"
+          :key="scope.value"
+        >
+          <input
+            v-model="store.searchScope"
+            type="radio"
+            name="search-scope"
+            :value="scope.value"
+            :disabled="!!knowledge.selectedId && scope.value === 'web'"
+          />
+          <span>{{ scope.label }}</span>
+        </label>
+      </fieldset>
+      <div v-if="store.thinking !== 'quick' && store.searchScope !== 'web'" class="kb-chat-select">
+        <label for="chat-knowledge">检索资料</label>
+        <ElSelect
+          id="chat-knowledge"
+          v-model="knowledge.selectedId"
+          :empty-values="[null, undefined]"
+          :disabled="store.busy"
+          aria-label="选择知识库"
+          :teleported="false"
+        >
+          <ElOption value="" label="项目内置资料（旧版检索）" />
+          <ElOption
+            v-if="
+              knowledge.selectedId &&
+              !knowledge.libraries.some((item) => item.id === knowledge.selectedId)
+            "
+            :value="knowledge.selectedId"
+            label="所选知识库不可用，请重新选择"
+            disabled
+          />
+          <ElOption
+            v-for="item in knowledge.libraries"
+            :key="item.id"
+            :value="item.id"
+            :label="item.name"
+          />
+        </ElSelect>
+        <RouterLink to="/knowledge">管理资料</RouterLink>
+      </div>
+      <p v-if="knowledgeError" class="kb-error">{{ knowledgeError }}</p>
       <div v-if="store.current?.images.length" class="attachment-list">
         <div v-for="(image, index) in store.current.images" :key="index" class="attachment">
           <img :src="image.data_url" :alt="image.filename" /><span>{{ image.filename }}</span
@@ -141,6 +202,7 @@ function handleKey(event: KeyboardEvent) {
               :key="item.value"
               :label="item.label"
               :value="item.value"
+              :disabled="!!knowledge.selectedId && item.value === 'quick'"
           /></ElSelect>
           <ElSelect
             v-model="store.model"

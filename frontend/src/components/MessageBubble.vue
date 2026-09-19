@@ -6,6 +6,12 @@ import { useClipboard } from '../composables/useClipboard'
 defineProps<{ message: Message; selected: boolean }>()
 defineEmits<{ inspect: [runId: string, sourceId?: string] }>()
 const { copy, feedback } = useClipboard()
+const scopeLabels: Record<string, string> = {
+  auto: '自动检索',
+  local: '本地 RAG',
+  web: '联网搜索',
+  all: '混合检索',
+}
 </script>
 <template>
   <article class="message" :class="message.role">
@@ -17,7 +23,9 @@ const { copy, feedback } = useClipboard()
         <strong>{{ message.role === 'assistant' ? 'AgenticRAG' : '你' }}</strong
         ><span v-if="message.status === 'streaming'" class="status-pill"
           ><i class="live-dot"></i>生成草稿</span
-        ><span v-else-if="message.status === 'success'" class="muted">{{ '回答完成' }}</span>
+        ><span v-else-if="message.status === 'success'" class="muted">{{
+          message.result?.response_mode === 'live_data_notice' ? '未获取到外部证据' : '回答完成'
+        }}</span>
       </div>
       <template v-if="message.role === 'user'"
         ><p class="user-text">{{ message.content }}</p>
@@ -31,6 +39,14 @@ const { copy, feedback } = useClipboard()
           /></div
       ></template>
       <template v-else>
+        <div v-if="message.result?.retrieval_plan" class="answer-evidence-summary">
+          <AppIcon name="book" :size="14" />
+          <span>{{ scopeLabels[message.result.retrieval_plan.search_scope] || '检索回答' }}</span>
+          <span>{{ message.result.source_map?.length || 0 }} 个证据来源</span>
+          <span v-if="message.result.timing?.first_delta_ms != null"
+            >首增量 {{ (message.result.timing.first_delta_ms / 1000).toFixed(1) }}s</span
+          >
+        </div>
         <MarkdownContent
           v-if="message.content"
           :content="message.content"
@@ -39,7 +55,8 @@ const { copy, feedback } = useClipboard()
           @citation="message.run_id && $emit('inspect', message.run_id, $event)"
         />
         <div v-else-if="message.status === 'submitting'" class="thinking-indicator" role="status">
-          <span></span><span></span><span></span><small>正在理解问题、选择处理路径…</small>
+          <span></span><span></span><span></span
+          ><small>{{ message.phase || '正在建立本轮请求…' }}</small>
         </div>
         <p
           v-if="message.notice"
@@ -52,6 +69,9 @@ const { copy, feedback } = useClipboard()
           }"
         >
           {{ message.notice }}
+        </p>
+        <p v-if="message.result?.evaluation?.unresolved" class="message-notice warning">
+          证据检查仍有待核实项：{{ message.result.evaluation.issues.join('；') }}
         </p>
         <div
           v-if="message.content || message.status === 'error' || message.status === 'cancelled'"

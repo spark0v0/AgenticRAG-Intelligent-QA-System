@@ -32,3 +32,13 @@ frontend/dist/
 *.db-journal
 frontend/test-results/
 frontend/playwright-report/
+
+# Local credentials and exports must never enter source control.
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+.env.backup*
+secrets/
+credentials/

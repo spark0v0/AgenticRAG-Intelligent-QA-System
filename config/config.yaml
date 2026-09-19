@@ -49,7 +49,7 @@ retrieval:
     target: router
     confidence: 0.95
 system:
-  max_retries: 2
+  max_retries: 1
   max_thinking_rounds: 5
   context_window_size: 4096
   enable_visualization: true
@@ -61,13 +61,17 @@ router:
   fallback_to_rules: true
   llm_temperature: 0
   llm_max_tokens: 400
-  llm_timeout_seconds: 12
+  llm_timeout_seconds: 4
   llm_max_history_turns: 3
 planner:
+  use_llm: true
+  timeout_seconds: 8
   max_tasks: 8
   complexity_threshold: 0.55
 retriever:
-  max_attempts: 3
+  tool_selection: policy
+  selector_timeout_seconds: 5
+  max_attempts: 2
   max_results: 8
   quality_threshold: 0.62
   default_strategy: parallel
@@ -77,7 +81,8 @@ generator:
   enable_citation: true
   max_context_docs: 6
   max_context_chars: 2400
-  max_history_turns: 20
+  max_history_turns: 6
+  max_history_chars: 6000
 critic:
   quality_threshold: 0.72
   retrieval_retry_threshold: 0.55

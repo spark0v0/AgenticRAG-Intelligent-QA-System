@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { readEvents } from '../../src/api/sse'
 import { api, checked, ApiError } from '../../src/api/client'
 import { useWorkbench } from '../../src/stores/workbench'
+import { useKnowledge } from '../../src/stores/knowledge'
+import { knowledgeApi } from '../../src/api/knowledge'
 import MarkdownContent from '../../src/components/MarkdownContent.vue'
 import type { ExecutionEvent, SystemStatus } from '../../src/types'
 
@@ -195,4 +197,22 @@ it('uses the committed answer when completion wins the cancel race', async () =>
   expect(store.current!.status).toBe('success')
   expect(store.current!.messages.at(-1)?.content).toBe('committed')
   expect(store.current!.draft).toBe('')
+})
+
+
+it('restores library scope per conversation and never falls back when a library disappears', async () => {
+  const store = setupStore()
+  const knowledge = useKnowledge()
+  const first = store.currentId
+  knowledge.selectedId = 'library-a'
+  store.searchScope = 'all'
+  store.newChat()
+  knowledge.selectedId = 'library-b'
+  await store.loadSession(first)
+  expect(knowledge.selectedId).toBe('library-a')
+  expect(store.searchScope).toBe('all')
+  vi.spyOn(knowledgeApi, 'list').mockResolvedValue({ items: [], limits: knowledge.limits })
+  await knowledge.refresh()
+  expect(knowledge.selectedId).toBe('library-a')
+  store.dispose()
 })

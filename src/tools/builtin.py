@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from retrieval import HybridKnowledgeBase, is_code_like, tokenize
 from .base import ToolDocument, ToolResult, ToolSpec
 from .mcp_client import StdioMCPClient
+from .web_search import search_web
 
 WEATHER_CODE_MAP = {
     0: "晴朗",
@@ -46,6 +47,12 @@ class KnowledgeBaseSearchInput(BaseModel):
     include_code: bool = False
     prefer_documents: bool = True
     retrieval_mode: str = "hybrid"
+
+
+class LibrarySearchInput(BaseModel):
+    query: str
+    knowledge_base_id: str
+    limit: int = Field(default=6, ge=1, le=20)
 
 
 class KnowledgeGraphSearchInput(BaseModel):
@@ -235,96 +242,6 @@ def _strip_html(text: str) -> str:
     return html.unescape(clean).strip()
 
 
-def _web_search_sync(query: str, limit: int) -> ToolResult:
-    documents: List[ToolDocument] = []
-
-    ddg_response = requests.get(
-        "https://api.duckduckgo.com/",
-        params={"q": query, "format": "json", "no_html": 1, "no_redirect": 1, "skip_disambig": 1},
-        headers=_http_headers(),
-        timeout=12,
-    )
-    ddg_response.raise_for_status()
-    ddg_data = ddg_response.json()
-
-    if ddg_data.get("AbstractText"):
-        documents.append(
-            ToolDocument(
-                content=f"{ddg_data.get('Heading') or query}：{ddg_data.get('AbstractText')}",
-                source=ddg_data.get("AbstractURL") or "duckduckgo",
-                score=0.9,
-                confidence=0.82,
-                metadata={
-                    "provider": "duckduckgo_instant",
-                    "title": ddg_data.get("Heading") or query,
-                    "url": ddg_data.get("AbstractURL"),
-                },
-            )
-        )
-
-    related_topics = ddg_data.get("RelatedTopics") or []
-    for topic in related_topics:
-        if len(documents) >= limit:
-            break
-        if isinstance(topic, dict) and topic.get("Text"):
-            documents.append(
-                ToolDocument(
-                    content=str(topic.get("Text")),
-                    source=topic.get("FirstURL") or "duckduckgo",
-                    score=0.74,
-                    confidence=0.72,
-                    metadata={"provider": "duckduckgo_related", "url": topic.get("FirstURL")},
-                )
-            )
-        for nested in topic.get("Topics") or []:
-            if len(documents) >= limit:
-                break
-            if nested.get("Text"):
-                documents.append(
-                    ToolDocument(
-                        content=str(nested.get("Text")),
-                        source=nested.get("FirstURL") or "duckduckgo",
-                        score=0.7,
-                        confidence=0.69,
-                        metadata={"provider": "duckduckgo_related", "url": nested.get("FirstURL")},
-                    )
-                )
-
-    if len(documents) < limit:
-        wiki_response = requests.get(
-            "https://zh.wikipedia.org/w/api.php",
-            params={
-                "action": "query",
-                "list": "search",
-                "srsearch": query,
-                "srlimit": limit,
-                "utf8": 1,
-                "format": "json",
-            },
-            headers=_http_headers(),
-            timeout=12,
-        )
-        wiki_response.raise_for_status()
-        wiki_hits = wiki_response.json().get("query", {}).get("search", [])
-        for hit in wiki_hits:
-            if len(documents) >= limit:
-                break
-            title = hit.get("title") or query
-            snippet = _strip_html(hit.get("snippet", ""))
-            documents.append(
-                ToolDocument(
-                    content=f"{title}：{snippet}",
-                    source=f"https://zh.wikipedia.org/wiki/{title.replace(' ', '_')}",
-                    score=0.78,
-                    confidence=0.74,
-                    metadata={"provider": "wikipedia", "title": title},
-                )
-            )
-
-    if not documents:
-        return ToolResult(status="error", error=f"未检索到可用网页结果：{query}")
-
-    return ToolResult(documents=documents[:limit], metadata={"backend": "internet_search", "service": "web"})
 
 
 def build_builtin_tools(config: Dict[str, Any]) -> List[ToolSpec]:
@@ -348,6 +265,11 @@ def build_builtin_tools(config: Dict[str, Any]) -> List[ToolSpec]:
         target = relation.get("target")
         if source and target:
             graph[str(source).lower()].append(relation)
+
+    async def library_search(payload: LibrarySearchInput) -> ToolResult:
+        from knowledge.service import get_service
+        result = await asyncio.to_thread(get_service().search, payload.knowledge_base_id, payload.query, payload.limit)
+        return ToolResult(documents=[ToolDocument.model_validate(doc) for doc in result['documents']], metadata=result['metadata'])
 
     async def knowledge_base_search(payload: KnowledgeBaseSearchInput) -> ToolResult:
         documents = await asyncio.to_thread(
@@ -438,12 +360,12 @@ def build_builtin_tools(config: Dict[str, Any]) -> List[ToolSpec]:
             return ToolResult(status="error", error=f"天气查询失败：{exc}")
 
     async def web_search(payload: WebSearchInput) -> ToolResult:
-        try:
-            return await asyncio.to_thread(_web_search_sync, payload.query, payload.limit)
-        except Exception as exc:
-            return ToolResult(status="error", error=f"联网搜索失败：{exc}")
+        return await search_web(payload.query, payload.limit)
 
     return [
+        ToolSpec(name="library_search", description="Search only the user-selected document library; no project corpus or other libraries.",
+                 handler=library_search, input_model=LibrarySearchInput, tags=["retrieval", "documents"],
+                 timeout_seconds=30.0, protocol="native", metadata={"category": "knowledge"}),
         ToolSpec(
             name="knowledge_base_search",
             description="Search the local AgenticRAG knowledge base with hybrid vector and lexical retrieval.",

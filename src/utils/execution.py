@@ -44,7 +44,10 @@ class Execution:
     sequence: int = 0
     generation: int = 0
     draft: str = ""
+    citations: dict[str, str] = field(default_factory=dict)
     stages: dict[str, int] = field(default_factory=dict)
+    started_clock: float = field(default_factory=time.perf_counter)
+    first_delta_ms: float | None = None
 
     def emit(self, kind: str, data: dict[str, Any]) -> dict:
         self.sequence += 1
@@ -62,6 +65,8 @@ class Execution:
         self.emit("answer_start", {"generation": self.generation, "draft": True})
 
     def delta(self, text: str) -> None:
+        if self.first_delta_ms is None:
+            self.first_delta_ms = round((time.perf_counter() - self.started_clock) * 1000, 2)
         self.draft += text
         self.emit("delta", {"text": text, "generation": self.generation})
 

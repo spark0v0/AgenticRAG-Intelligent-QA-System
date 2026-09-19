@@ -32,6 +32,7 @@ function dateLabel(timestamp: number) {
       <RouterLink to="/chat"
         ><AppIcon name="chat" :size="18" />智能问答<span class="nav-dot"></span
       ></RouterLink>
+      <RouterLink to="/knowledge"><AppIcon name="book" :size="18" />知识库</RouterLink>
       <RouterLink to="/runs"><AppIcon name="pulse" :size="18" />运行分析</RouterLink>
       <RouterLink to="/tools"><AppIcon name="layers" :size="18" />工具中心</RouterLink>
       <RouterLink to="/providers"><AppIcon name="server" :size="18" />模型供应商</RouterLink>
