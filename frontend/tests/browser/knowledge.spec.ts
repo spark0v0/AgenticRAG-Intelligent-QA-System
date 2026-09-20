@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { mkdirSync } from 'node:fs'
 
-test('知识库上传、检索引用、删除快照与窄屏核心流程', async ({ page }) => {
+test('知识库上传、检索引用、删除快照与窄屏核心流程', async ({ page }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -35,12 +34,11 @@ test('知识库上传、检索引用、删除快照与窄屏核心流程', async
     /\/original$/,
   )
   await page.screenshot({
-    path: '../docs/screenshots/knowledge-evidence-1440.png',
+    path: testInfo.outputPath('knowledge-evidence-1440.png'),
     animations: 'disabled',
   })
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: '原文位置的完整片段' })).toBeHidden()
-  mkdirSync('../docs/screenshots', { recursive: true })
   for (const viewport of [
     { width: 1440, height: 1000 },
     { width: 390, height: 844 },
@@ -51,7 +49,7 @@ test('知识库上传、检索引用、删除快照与窄屏核心流程', async
     })
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
     await page.screenshot({
-      path: `../docs/screenshots/knowledge-${viewport.width}.png`,
+      path: testInfo.outputPath(`knowledge-${viewport.width}.png`),
       fullPage: true,
       animations: 'disabled',
     })

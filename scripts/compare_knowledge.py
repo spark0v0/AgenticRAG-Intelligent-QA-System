@@ -34,7 +34,7 @@ for query, expected in queries:
         result = service.search(kb, query, 3, mode)
         report['comparisons'].append({'query': query, 'expected': expected, 'mode': mode,
             'sources': [item['source'] for item in result['documents']], 'elapsed_ms': round((time.perf_counter() - started) * 1000, 1)})
-destination = ROOT / 'docs/knowledge-retrieval-probe.json'
+destination = ROOT / '.cache/knowledge-retrieval-probe.json'
 destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
 print(json.dumps(report['comparisons'], ensure_ascii=False, indent=2))
 service.close()

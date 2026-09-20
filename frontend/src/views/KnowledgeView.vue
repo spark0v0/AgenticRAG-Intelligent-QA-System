@@ -352,7 +352,7 @@ onBeforeUnmount(() => {
           v-model="name"
           required
           maxlength="80"
-          placeholder="例如：产品手册、面试笔记"
+          placeholder="例如：产品手册、技术文档"
           autofocus
         /><label for="kb-mode">检索方式</label
         ><ElSelect id="kb-mode" v-model="mode" aria-label="检索方式"

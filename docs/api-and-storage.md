@@ -2,7 +2,7 @@
 
 ## 兼容与扩展
 
-执行链升级新增 `context.search_scope`（auto/local/web/all，默认 auto）；快速模式不检索，明确范围约束检索工具。`QueryResult` 新增 `evaluation`（证据结构检查、问题、修订次数、未解决状态）、`timing`（first_delta_ms 可为空、total_ms），`retrieval_plan` 增加查询、范围、轮次预算和停止原因。消息与 run 同时保存这些结果，旧记录缺字段时保持原显示。SSE 事件类型和草稿 generation 协议不变。Chroma 的分词版本变化会重建衍生索引，不删除原始文档或 SQLite；详情见 `agenticrag-audit.md`。
+执行链升级新增 `context.search_scope`（auto/local/web/all，默认 auto）；快速模式不检索，明确范围约束检索工具。`QueryResult` 新增 `evaluation`（证据结构检查、问题、修订次数、未解决状态）、`timing`（first_delta_ms 可为空、total_ms），`retrieval_plan` 增加查询、范围、轮次预算和停止原因。消息与 run 同时保存这些结果，旧记录缺字段时保持原显示。SSE 事件类型和草稿 generation 协议不变。Chroma 的分词版本变化会重建衍生索引，不删除原始文档或 SQLite；详情见 `architecture.md`。
 
 旧 `/query`、`/status`、`/tools`、`/sessions`、`/sessions/{id}`、`/sessions/{id}/cancel`、`/visualization/{id}`、`/requirements-audit` 保留，增加等价 `/api` 前缀。仅接受省略 mode 或 `mode=live`；`mode=demo` 返回 422。前端不再发送 mode。
 
@@ -23,7 +23,7 @@
 | POST /api/settings/providers/{id}/check | 请求模型列表，返回 ok/message/models；不创建付费 completion |
 | PUT /api/settings/default-model | body: {profile_id}；影响后续请求默认模型 |
 
-请求 context 只接收 thinking_mode/location/retrieval_mode/strategy，不能从浏览器注入 provider、api_key 或 model_config。图片 schema、最大长度、思考模式与模型档案均校验。不支持的参数返回 422；同会话并发/重复运行 ID 返回 409。运行后错误通过 error 事件传达，因为 HTTP 已经是 200。
+请求 context 只接收 thinking_mode/location/retrieval_mode/strategy/search_scope/knowledge_base_id，不能从浏览器注入 provider、api_key 或 model_config。图片 schema、最大长度、思考模式与模型档案均校验。不支持的参数返回 422；同会话并发/重复运行 ID 返回 409。运行后错误通过 error 事件传达，因为 HTTP 已经是 200。
 
 ## SSE 协议
 
@@ -86,25 +86,16 @@ $env:PYTHONPATH='src'
 
 ## 生产与安全边界
 
-2026-09-18 前端完善未变更后端 API 或数据库结构，无需新的数据迁移。前端引用跳转复用 Generator 已有 `source_map[].citation_id` 与 `[Sx]` 约定，不持久化额外推断关系。供应商 422 校验复用 `detail[].loc/type/msg`，客户端只接受安全消息并保留字段路径；连接检查 HTTP 成功不代表业务成功，仍须判断 `ok`。
+前端引用跳转使用 `source_map[].citation_id` 与 `[Sx]` 约定。供应商参数校验返回 `detail[].loc/type/msg`，客户端保留字段路径并展示安全消息；连接检查还需判断响应中的 `ok`。
 
 FastAPI 同源提供 SPA 与 API，无需跨域白名单。构建后启动服务，GET 已知前端路径返回 index；未知路径 404。默认 127.0.0.1，单 worker。若外接反向代理，关闭 SSE 响应缓冲，保持长连接超时；不需要 Nginx 才能本机运行。
 
 `/providers` 是 SPA 页面。`/runs` 和 `/tools` 同时兼容 HTML 页面和旧 JSON 路由，`/api/runs`、`/api/tools` 始终为 API。供应商管理仅接受本机来源和本机 Host，写操作必须包含 `X-Workbench-Request: 1`，拒绝外站 Origin；这用于本机工作台的跨站防护，**不是公网身份认证**。API 参数错误不返回 Pydantic 原始 input，防止回显输入 Key。
 
-`public_data` 递归去掉凭据键、model_config/raw_response，并对已知环境密钥与常见 URL token 做替换。检索排除配置、环境文件、测试及退役样例，并在分块前过滤已知密钥。用户请求与第三方内容仍可能包含任意敏感文本；此过滤不是通用 DLP。公开截图使用隔离历史和仓库公开资料，回答仍来自真实供应方。
+`public_data` 递归去掉凭据键、model_config/raw_response，并对已知环境密钥与常见 URL token 做替换。检索排除配置、环境文件、测试及退役样例，并在分块前过滤已知密钥。用户请求与第三方内容仍可能包含任意敏感文本；此过滤不是通用 DLP。公开截图仅使用通用或未配置数据；测试截图保留在被忽略的测试结果目录。
 
 `connection_verified` 不由模型列表检测设置，只在真实生成成功后设置。图片能力来自 provider/模型默认值或配置声明，不保证所有兼容供应方都实现视觉接口。只接受 openai/deepseek/ollama/xinference 提供方，拒绝 mock 和未实现提供方。完整结果和流式生成均禁止自动切换备用模型；模型失败进入错误终态。更严格的认证、媒体内容校验、会话分页和多进程任务队列属于后续改进。
 
-## 演示模式退役
+## 知识库接口与存储
 
-`AGENTICRAG_DEMO_DATA` 不再生效，正常服务没有演示数据读取入口。后续隐私清理已按用户要求删除当前项目的运行数据与旧截图；原项目不在清理范围。`docs/demo-knowledge.md`、`docs/ui-concepts/` 为通用历史样例说明，不作当前产品证据。新截图只展示未配置状态。
-
-浏览器启动只将 `rag-session-live` 迁移为 `rag-session`（已有新指针优先），移除 `rag-mode`、`rag-session-demo`、`rag-session-live`。不导入旧演示数据库。若用户曾自行将演示数据复制到真实库，系统无法可靠辨识其来源，不会擅自删记录。
-
-自动化夹具位于 `tests/workbench_fixtures.py`，只有测试服务导入；临时 SQLite/Chroma 与真实数据隔离。`tests/serve_real_smoke.py` 是人工执行的真实服务联调入口，读取现有模型档案，使用 `.cache/real-service-smoke/` 保存隔离记录；不会被 pytest 或 CI 自动启动。
-
-
-## 本轮知识库 API 与存储增量
-
-见 [本轮知识库 API 与存储增量](knowledge-workbench.md)。该记录区分既有能力、本轮新增能力、真实本地嵌入与隔离回答夹具。
+文档上传、索引作业、检索预览、原文访问与索引重建见 [知识库文档](knowledge-workbench.md)。知识库请求携带 `knowledge_base_id`，来源包含文档、片段、版本和实际位置，历史结果保存当时的证据快照。

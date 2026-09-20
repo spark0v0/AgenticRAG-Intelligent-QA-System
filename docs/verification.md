@@ -1,84 +1,59 @@
-# 实际验证记录
+# 测试与开发检查
 
-环境：Windows / PowerShell、Node 24.19、npm 11.6、Python 3.13、系统 Chrome。记录区分历史验证与当前检查，不代表所有供应方或云端 CI 均通过。
+## 前端
 
-## 2026-09-18 Tavily 接入（最新）
+在项目根目录运行：
 
-增加后端 Tavily basic 搜索，凭据仅从环境读取；不返回搜索平台生成答案，不自动切换服务。认证、额度、超时、不可用、无结果通过固定安全提示传递到回答，前端对 live_data_notice 显示「未获取到外部证据」。保留原有来源映射、运行与持久化协议。
+```powershell
+npm --prefix frontend run lint
+npm --prefix frontend run format:check
+npm --prefix frontend run smoke
+npm --prefix frontend run build
+```
 
-`tests/test_agent_upgrade.py` 9 项通过，含 Tavily 鉴权请求、网页证据提取、危险 URL 过滤、去重、凭据不回传、未配置及 HTTP 失败不降级；使用隔离 HTTP 夹具，无付费模型或搜索请求。第一次运行的 3 个临时目录权限错误，通过指定项目 `.cache` 下的新隔离目录解决。vue-tsc / Vite 构建及 ESLint 通过，git diff --check 无错误。本机服务已在 8006 重启，页面 HTTP 可访问。尚未配置并验证真实 Tavily 服务，也未对本次文案变化重新进行完整浏览器测试；不能据此声称真实搜索质量已验收。
+构建包含 `vue-tsc` 类型检查。Vitest 覆盖 SSE 中文分块与异常断流、会话隔离、取消和草稿替换、Markdown 安全渲染及知识库范围恢复。
 
-## 2026-09-18 AgenticRAG 改进
+## 后端
 
-后续 AgenticRAG 改进：Python 14 项通过（既有 7 项 + 新增 7 项），覆盖明确意图跳过模型分类、中文 BM25/RRF、查询相关片段、引用结构、结构化规划、单次生成与持久化、搜索部分成功、Critic 使用新查询重检索。均使用隔离文件与 HTTP 夹具，没有付费调用。
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py tests/test_agent_upgrade.py tests/test_knowledge_smoke.py -q
+```
 
-前端 vue-tsc / Vite 构建、ESLint、9 项 Vitest 通过；Playwright 一条相关完整流程通过（本地范围、SSE、取消重试、来源、历史恢复、运行导航、窄屏）。没有重复跑无关表单和长会话场景。细节见 `agenticrag-audit.md`。
+核心检查覆盖事务持久化、JSON 幂等迁移、供应商设置、Tavily 请求适配、知识库上传与重复识别、跨库隔离、任务恢复、重建失败和删除一致性。模型与网络调用使用隔离夹具，不默认消耗付费配额。
 
-随后发现用户已经重新配置供应商，保留其配置并完成一次真实本地问答。客户端等待 9915ms，后端 total_ms=9830.67，经过 Router → Retriever → Generator → Critic；2 轮检索、1 轮生成、6 个来源，停止原因 no_new_evidence，证据检查无未解决项。数据库恢复正文及 source_map 与完成结果一致。该配置 supports_streaming=false，传输为 buffered，first_delta_ms=null，未擅自更改能力开关。仅提交一次问答，不自动重放；原始无凭据指标在 Git 忽略的 `.cache/agent-live-metrics.json`。这些数据不是旧版本性能对照，不代表事实准确率或其他供应方结果。
+Windows 系统临时目录不可用时，指定新的工作区临时目录：
 
-当前正常页面的空白截图脚本因用户已经添加供应商而主动停止，没有覆盖发布截图。桌面/窄屏新控件的浏览器验证截图为隔离夹具，位于 `frontend/test-results/evidence/`，不作为真实回答截图发布。
+```powershell
+$testRoot = Join-Path (Get-Location) ('.cache/pytest-' + [guid]::NewGuid().ToString('N'))
+.\.venv\Scripts\python.exe -m pytest tests/test_knowledge_smoke.py -q --basetemp=$testRoot
+```
 
-随后通过正常服务回看上述唯一真实问答，检查桌面/390px 控件、证据检查、停止原因和运行页，控制台/脚本错误为空；没有再发模型请求。截图裁去侧栏并写入忽略目录 `frontend/test-results/agent-live/`，未发布用户供应商或其他历史。实测回答没有遵守一句话要求，并遗漏可用文档中的存储介质，说明引用结构通过不等于内容正确。随后修正了检索问题中的格式指令干扰与生成长度优先级，7 项相关离线测试再次通过；未再付费复测该最后修补，不声称问题已获真实模型验收。
+## 浏览器核心流程
 
-最终版本在 `http://127.0.0.1:8006` 启动；只读浏览器回看再次通过，真实历史恢复、证据检查可见、390px 无横向溢出，浏览器错误为 0、额外模型请求为 0。最终 ESLint 与 Prettier 检查通过。旧的本项目 8005 服务已停止，原项目服务未改动。代码仍为本地改动，未推送。
+```powershell
+cd frontend
+$env:WORKBENCH_PYTHON = (Resolve-Path ..\.venv\Scripts\python.exe).Path
+$env:PLAYWRIGHT_CHANNEL = 'chrome'
+npm run smoke:browser
+```
 
-## 2026-09-18 隐私清理（本轮改进之前）
+测试服务使用 `tests/browser_server.py` 和临时数据库，覆盖会话、取消、来源、供应商表单、运行分析及知识库上传到引用的流程。不要占用测试端口 8010。无 Chrome 时安装 `npx playwright install chromium` 并移除 `PLAYWRIGHT_CHANNEL`。
 
-以下是此前清理时的状态，不代表用户重新配置供应商后的当前状态。
+截图与结果写入 `frontend/test-results/`，不进入源码目录。若浏览器临时目录受限，可将当前终端的 `TEMP` 和 `TMP` 指向项目 `.cache/browser-temp`。
 
-按用户要求清理当时项目：删除本机供应商凭据数据库、会话与运行记录、Chroma 索引、旧日志、截图和本地配置导入脚本；默认模型及档案恢复为空。保留供应商管理、空白环境模板和隔离测试夹具，便于重新配置。原项目与系统环境变量不在清理范围。
+## 检索比较
 
-旧截图与原始指标文件已从当前版本移除，以下历史结论仅作文字记录，不再提供含使用记录的附件。当前截图只展示未配置页面；截图工具默认写入 Git 忽略的测试输出目录，不自动发布用户历史。
+```powershell
+.\.venv\Scripts\python.exe scripts/prepare_embedding.py
+.\.venv\Scripts\python.exe scripts/compare_knowledge.py
+```
 
-本轮实际检查：
+比较脚本使用已下载的真实 BGE 模型，在隔离数据库中对固定资料执行关键词、语义和混合检索，报告写入 `.cache/knowledge-retrieval-probe.json`。小样本用于观察排序和路径是否可运行，不能作为召回率或性能提升结论。
 
-| 检查 | 结果 |
-| --- | --- |
-| `npm run build` / `npm run lint` | vue-tsc、Vite 构建、ESLint 通过 |
-| `node --check scripts/real-smoke.mjs` | 脚本语法检查通过 |
-| 正常 API | 供应商、会话、运行记录和已配置模型均为 0；默认标签为「未配置模型」 |
-| 未配置时发送 | `/api/query/stream` 返回 503，不创建会话或运行、不发起上游请求 |
-| 正常页面 | 1440px / 390px 问答、供应商、运行分析均可访问，无页面横向溢出；供应商新增表单可打开/关闭，Key 为空 |
-| 浏览器检查 | `capture-workspace.mjs` 通过，pageerror / console error 为空；6 张新截图已目视检查，结果见 `screenshots/clean-metrics.json` |
-| 当前文件隐私扫描 | 未匹配已知本机 Key、私人邮箱或原项目绝对路径；可达提交作者邮箱均为 GitHub noreply |
-| Git 排除规则 | 环境文件、整个 data 目录、数据库及日志、测试结果和构建产物均被忽略 |
+## 外部服务检查
 
-本次未执行真实模型请求，不消耗供应方配额；未重复运行无关的大范围算法或浏览器夹具测试。扫描只能覆盖已知值与所用规则，不是对所有未知敏感内容的证明。
+真实回答模型与 Tavily 需另行配置，可在界面手动提交少量问题并检查来源、事件和历史一致性。连接检查只验证模型列表接口；自动化夹具通过不代表真实供应商联调成功。外部请求可能消耗账户配额。
 
-本次以普通提交更新当前版本，未改写 Git 历史。旧版本中的截图、配置名称及文档可能仍在历史提交中；不能由当前文件清理推断所有历史副本已消失。删除项目中的凭据不等于在供应方撤销 Key。
+## 持续集成
 
-## 前端完善的历史验证
-
-以下检查在隐私清理前执行；本次不以旧记录代替新检查。
-
-| 检查 | 历史结果与范围 |
-| --- | --- |
-| ESLint / Prettier / vue-tsc / Vite | 通过 |
-| Vitest | 9 项通过：SSE UTF-8 分块、多帧、缺终态、跨会话与草稿替换、安全 Markdown 与明确引用、422 字段错误、取消竞态 |
-| Playwright | 3 条核心流程通过：问答停止/重试/恢复、运行页窄屏返回、供应商校验/失败反馈/保存/删除、长会话 |
-| Python 相关检查 | 流式、取消、JSON 幂等迁移、凭据不回传、Key 留空保留/显式清除、运行分页等 7 项通过 |
-| 正常页面 | 桌面 1440×1000、窄屏 390×844、空会话 320px 无横向溢出；浅色/深色、表单和引用定位通过 |
-| 真实历史回看 | 回答与运行页引用定位、瀑布选择、节点详情、JSON 导出、回到会话通过；没有为截图重发模型请求 |
-
-表单与流式自动化使用隔离夹具，不进入产品路径。60 条长消息夹具曾测得导航至消息可见 332ms、填写输入确认 19ms，包含自动化开销，仅代表当时本机的一次测量。原始测试产物已移除，不声称纯 Vue 耗时或性能改善百分比，也未据此引入虚拟列表。
-
-## 真实服务的历史验证
-
-清理前完成过真实检索问答、历史恢复与增量后取消，另以受管理供应商完成过模型列表检查和一次短问答。问答最终文本与当时 SQLite 中记录一致，取消运行保存为 cancelled；供应方名称、具体问题、来源路径、会话及原始截图现已从当前交付材料移除。
-
-这些历史结果不能证明所有供应方现在可用。后续用户重新配置后的单次验证见本文最新一节；不要将不同阶段的验证范围混为一谈。
-
-## 限制
-
-- 云端 CI 以 GitHub Actions 实际结果为准，本轮不将本机检查描述为云端验收。没有负载压测、商业部署或准确率评价。
-- 其他供应方、真实图片输入、天气/网络搜索、完整 Dify 发布没有统一外部验收；图片链路的夹具测试不能证明真实视觉效果。
-- 原真实问答未触发 Critic 再生成；多轮草稿替换由单元测试覆盖。Critic 是规则参考评审，引用映射不证明模型引用正确。
-- 本机单 worker，无公网鉴权；生成验证属于后端进程，重启后可能显示未验证。
-- SSE 取消可关闭异步上游连接；同步工具和部分本机模型调用可能持续至超时，不能保证供应方停止计算或计费。
-- 历史全量加载、图片 base64 存储适合当前规模；JSON 迁移为幂等导入，不做双向同步，旧记录缺失的元数据不补造。
-- 规则评审、HashEmbeddings、配置式图谱、示例 MCP 是当前实现边界，后续范围见 `roadmap.md`。
-
-
-## 本轮知识库验证
-
-见 [本轮知识库验证](knowledge-verification.md)。该记录区分既有能力、本轮新增能力、真实本地嵌入与隔离回答夹具。
+`.github/workflows/workbench.yml` 执行前端静态检查、核心单元测试、构建、Python 测试及 Playwright 流程，失败时可下载运行产物。执行结果以对应 GitHub Actions 运行记录为准。

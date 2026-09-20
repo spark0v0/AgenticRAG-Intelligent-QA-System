@@ -1,10 +1,10 @@
 # 本地知识库：启动、设计与操作
 
-## 本轮范围
+## 概述
 
-在已有 Vue 工作台、SSE、会话 SQLite、运行分析、模型供应商与 Tavily 接入之上新增用户文档知识库。旧项目只作参考，未修改其配置、数据或虚拟环境。当前项目已建立自己的 `.venv`，不再需要使用参考项目的 Python。
+知识库支持用户文档管理、异步索引、检索预览、限定范围问答与证据定位。文档、任务与片段存储于 SQLite，语义向量存储于独立 Chroma collection，后台索引线程与聊天请求分开执行。
 
-所有命令均在本仓库根目录运行。本轮不提交或推送 Git，不改写现有 `.env`，不调用付费模型或 Tavily 做验证。
+所有命令均在项目根目录执行，使用项目自己的 `.venv`。
 
 ## Windows 启动
 
@@ -24,7 +24,7 @@ $env:PYTHONUTF8 = '1'
 & .\.venv\Scripts\python.exe scripts/prepare_embedding.py
 ```
 
-使用 FastEmbed 0.7.4 / CPU ONNX 的 `BAAI/bge-small-zh-v1.5`，512 维。官方支持表约 0.09 GB；本机下载时 Hugging Face 缓存软链接权限失败，FastEmbed 使用其官方备用源下载了约 54.6 MB 压缩包并成功完成推理。解压文件、缓存和依赖会额外占用磁盘；无需 GPU、API Key 或按次付费。模型首载与索引占用本机 CPU/RAM，嵌入线程限制为 2。无需开启 Windows 管理员权限。
+使用 FastEmbed 0.7.4 / CPU ONNX 的 `BAAI/bge-small-zh-v1.5`，输出 512 维向量。首次准备会下载公开模型及缓存，下载量取决于分发格式，缓存与依赖还会占用额外磁盘空间。运行无需 GPU 或嵌入服务 API Key；首载与索引消耗本机 CPU/RAM，嵌入线程数为 2。
 
 来源：[FastEmbed 模型列表](https://qdrant.github.io/fastembed/examples/Supported_Models/)、[BGE 中文小模型](https://huggingface.co/BAAI/bge-small-zh-v1.5)。
 
@@ -127,6 +127,6 @@ powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 
 中文分词沿用已有二元分词；BM25 和真实语义候选经 RRF 融合，按稳定片段 ID 去重。切分按段落/句界尽量保持结构，每片最多 420 字符、相邻约 60 字符重叠，PDF 不跨页。语义查询由 Chroma 执行，范围仅包含当前库已提交的 generation。
 
-固定比较可重跑：`.venv\Scripts\python.exe scripts/compare_knowledge.py`。结果见 `knowledge-retrieval-probe.json`。3 份固定资料、3 个问题上三种模式首位都命中预期资料；语义还召回了一些较弱相关资料。因此本轮没有依据声称召回率提高，也没有添加重排模型。样本与耗时只证明本机路径可运行，不是准确率或生产性能基准。
+固定比较可重跑：`.venv\Scripts\python.exe scripts/compare_knowledge.py`。结果写入 `.cache/knowledge-retrieval-probe.json`，比较固定资料在关键词、语义和融合模式下的排名与耗时。样本规模有限，仅用于检查检索路径；尚未建立覆盖实际业务的召回率或性能基准。
 
 全量 BM25 候选仍在内存计算，适合当前个人本地规模；未验证大量文档、多进程、多用户并发或超大 PDF。PDF 提取和 ONNX 取消受单次同步调用边界限制。模型级事实核验、OCR、更强中文分词、海量索引与 reranker 均为后续议题。

@@ -1,125 +1,204 @@
-# AgenticRAG 智能问答与检索工作台
+# AgenticRAG 智能搜索与问答系统
 
-Vue 3 中文 AI 工作台，连接已有 Python/FastAPI AgenticRAG 执行链。提供多轮会话、图片附件、模型选择、真实 SSE 回答、停止生成、来源和工具详情、执行时间线与历史恢复。产品仅保留真实业务路径；没有凭据或调用失败时显示错误，不生成模拟成功回答。
+基于 Vue 3 与 FastAPI 的智能问答工作台，通过 Router、Planner、Retriever、Generator、Critic 五类智能体按需组织检索与生成流程。支持本地文档知识库、联网搜索、多轮流式对话，以及回答引用和执行过程可视化。
 
-![未配置的工作台](docs/screenshots/clean-chat-1440.png)
+![问答工作台](docs/screenshots/clean-chat-1440.png)
 
-新增可写入的模型供应商管理与独立运行分析：添加兼容供应商、保存本机凭据、发现模型、设置默认模型；按运行检索、查看真实耗时瀑布、证据及最终回答，并导出 JSON。Windows 新增凭据由当前用户 DPAPI 加密。界面使用 Element Plus 表单/弹窗/选择器与自定义业务布局，保留浅色和深色主题。
+## 功能
 
-最新前端完善：供应商字段级校验与可定位的错误摘要；连接失败使用错误反馈，区分模型列表连通和生成验证。空会话集中输入、对话中输入区停靠；回答中的 `[S1]` 等已映射引用可定位证据。手机端运行分析采用「列表 → 详情 → 返回」，保留搜索和选择状态。样式按主题、公共控件和业务模块维护，不再叠加 `workspace.scss`。
+- **智能问答**：多会话与历史恢复、模型选择、检索范围选择、图片附件、流式回答与停止生成。
+- **本地知识库**：创建与管理资料库，上传 TXT、Markdown、文本型 PDF，查看索引进度，重试或取消任务。
+- **混合检索**：BGE 中文语义嵌入、ChromaDB 向量检索与 BM25 关键词检索，通过 RRF 融合排名，按所选知识库限定检索范围。
+- **联网搜索**：接入 Tavily，将网页链接与摘要作为回答证据；支持本地资料与联网结果组合检索。
+- **引用与执行分析**：查看原文片段、PDF 页码、节点时间线、耗时瀑布图、工具调用与历史运行记录。
+- **模型供应商管理**：配置模型服务、发现模型、设置默认模型，区分凭据配置、模型列表连接与生成调用状态。
+- **交互与展示**：Markdown 安全渲染、代码高亮与复制、滚动跟随、明暗主题及窄屏布局。
 
-## 本地知识库（本轮新增）
+## 技术栈
 
-新增 `/knowledge`：创建/重命名/删除知识库，上传 TXT、Markdown、文本型 PDF，后台索引与重试/取消，限定资料范围问答，以及带文档版本、片段和实际页码的证据抽屉。真实中文 BGE 小模型在 CPU 本地运行，也提供明确标注的关键词模式，不以哈希向量冒充语义检索。
+| 层次 | 技术 | 用途 |
+| --- | --- | --- |
+| 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia | 组件、路由、类型与会话状态管理 |
+| 界面 | Element Plus、SCSS、CSS 变量 | 表单、抽屉、主题与响应式布局 |
+| 内容渲染 | markdown-it、DOMPurify、highlight.js | Markdown 解析、内容净化和代码高亮 |
+| 流式通信 | Fetch、ReadableStream、SSE、AbortController | 增量响应、执行事件与请求取消 |
+| 后端 | Python、FastAPI、Pydantic、HTTPX | API、参数校验、模型与外部服务调用 |
+| 本地检索 | FastEmbed / ONNX Runtime、BGE、ChromaDB、BM25、RRF | 中文语义嵌入、向量与关键词融合检索 |
+| 联网检索 | Tavily Search API | 网页搜索与证据摘要 |
+| 持久化 | SQLite | 会话、消息、运行事件、供应商配置及文档索引任务 |
+| 检查与测试 | ESLint、Prettier、vue-tsc、Vitest、Playwright、pytest | 静态检查与核心流程测试 |
 
-当前项目已建立独立 `.venv`，无需依赖参考项目的 Python 环境。语义模型首次准备：`.venv\Scripts\python.exe scripts/prepare_embedding.py`；启动：`powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1`，访问 **http://127.0.0.1:8000/knowledge**。
+## 执行流程
 
-- [知识库启动、API、存储与重建说明](docs/knowledge-workbench.md)
-- [知识库验证记录](docs/knowledge-verification.md)
-- [知识库演示脚本、简历与面试材料](docs/knowledge-career.md)
+```text
+Vue 工作台 → FastAPI → Router
+                       ├─ 直接回答 ──────────────────┐
+                       ├─ Retriever ────────────────┤
+                       └─ Planner → Retriever ──────┤
+                                                   ↓
+                                              Generator
+                                                   ↓
+                                                Critic
+                                                   ↓
+                                      最终回答、来源与 SQLite 历史
 
-## 安装与启动
+Retriever → 本地知识库 / Tavily / 已注册工具
+执行阶段与回答增量 → SSE → 会话页面与执行详情
+```
 
-已验证环境：Windows / PowerShell、Node.js 24.19、npm 11.6、Python 3.13。使用现有 npm 锁文件，不混用 pnpm。前端要求 Node >=24.15；Python 直接依赖约束见 `requirements-verified.txt`，不是全量跨平台锁文件。
+Router 根据问题与用户选择确定处理路径；Planner 为复杂问题生成受限的检索子问题；Retriever 执行检索计划；Generator 融合证据生成回答；Critic 检查引用结构与证据边界，并可触发受限修订。简单请求不必经过全部节点。详细流程见 [系统架构](docs/architecture.md)。
+
+## 快速开始
+
+### 环境
+
+- Node.js **24.15+**，npm（使用 `frontend/package-lock.json`）。
+- Python **3.13**；直接依赖约束见 `requirements-verified.txt`。
+- 以下命令使用 Windows PowerShell，在项目根目录执行。
+
+### 安装与启动
 
 ```powershell
-# 在克隆后的项目根目录执行
+git clone https://github.com/spark0v0/AgenticRAG-Intelligent-QA-System.git
+cd AgenticRAG-Intelligent-QA-System
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -c requirements-verified.txt
-cd frontend
-npm ci
-npm run build
-cd ..
-.\.venv\Scripts\python.exe src\api\main.py
+npm --prefix frontend ci
+npm --prefix frontend run build
+powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 ```
 
-访问 **http://127.0.0.1:8000/chat**。已有 `.venv` 时可直接构建、启动。构建后重启后端以挂载新资源。默认只监听本机，使用单 Uvicorn worker；尚无公网鉴权与多进程任务协调。
+访问 [问答工作台](http://127.0.0.1:8000/chat)。前端构建由 FastAPI 同源提供，支持已配置的 SPA 路由刷新。API 文档位于 [Swagger UI](http://127.0.0.1:8000/docs)。默认监听本机并使用单个 Uvicorn worker。
 
-开发时保持后端运行，在另一个 PowerShell 中执行：
+自定义端口：
 
 ```powershell
-cd frontend
-npm run dev
+powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1 -Port 8001
 ```
 
-访问 http://127.0.0.1:5173 。Vite 代理 `/api` 到 8000。端口占用时后端设置 `$env:PORT='8001'`；前端设置 `$env:VITE_API_TARGET='http://127.0.0.1:8001'` 并执行 `npm run dev -- --port 5174`。完整生产联动由 FastAPI 提供，`vite preview` 只作静态预览。
+### 配置回答模型
 
-## 使用
+打开「模型供应商」，添加服务地址、凭据和模型 ID，配置流式或图片能力并设为默认模型。支持 OpenAI 兼容接口、DeepSeek、Ollama 和 Xinference；OpenAI 兼容接口与 DeepSeek 可使用真实增量响应，Ollama、Xinference 和关闭流式能力的配置使用完整结果模式。
 
-新增「检索范围」：自动、本地知识、联网搜索、本地 + 联网；快速回答跳过检索。深度分析生成有数量和超时限制的检索子问题。回答可查看证据、首增量时间及停止原因。完整核实见 [AgenticRAG 要求对照与改进](docs/agenticrag-audit.md)。
+连接检查请求供应商的模型列表，不发送问答。完成一次问答后，系统才会记录该模型的生成调用成功状态。模型配置也可通过 `config/config.yaml` 与后端环境变量提供。
 
-1. 打开「模型供应商」，添加服务名称、协议、基础地址和 API Key。保存后检测连接，可发现模型，也可直接填写供应商文档中的模型 ID。配置流式/图片能力后保存并设为默认。连接检查只访问模型列表，不发送问答；接口已连接、凭据已配置、模型实际调用成功是三种不同状态。
-2. 新建会话，选择模型及处理模式，输入问题。Enter 发送、Shift+Enter 换行；中文组合输入不会误发送。常用问题只填入输入框，由用户确认发送。
-3. 支持图片的模型可添加 PNG/JPEG/WebP/GIF，每轮最多 4 张、每张 4MiB。能力来自后端配置声明，供应方实际支持情况仍须联调。
-4. 回答过程中可停止。失败或取消会恢复输入，重试需手动发送。切换会话后原任务继续执行，返回原会话可停止。
-5. 点击回答中有高亮的 `[S1]` 等引用，定位对应证据；只有后端 `source_map` 中存在的编号可点击，普通数字和未知引用保持原样。从回答下方打开执行详情，或进入「运行分析」按问题/状态查找记录。选择瀑布节点查看起止时间、输入输出、节点期间工具调用；切换证据/最终回答，导出单次运行 JSON，或回到原会话。手机端用「返回运行列表」继续筛选。刷新恢复已保存历史；旧 JSON 会话可能没有运行元数据。
-6. 工具中心支持搜索、协议筛选和 Schema 查看，系统概览支持刷新；两页不提供配置写入。
+### 配置 Tavily 联网搜索
 
-## 模型与数据
-
-优先通过「模型供应商」配置，保存于 Git 忽略的 `data/settings/providers.sqlite3`。Windows 使用 DPAPI 当前用户加密，跨机器/用户迁移需重新填写 Key；其他系统使用权限为 0600 的本地文件，**不是加密存储**。编辑时空 Key 表示保留，清除需要显式打开开关。浏览器不缓存或回读 Key，网络请求仍会把用户刚输入的 Key 交给本机后端；不要分享开发者工具中的请求体。
-
-默认配置为空：没有预设个人模型档案、供应商凭据或历史记录。首次使用请在「模型供应商」重新添加服务、填写 Key 和模型 ID，保存并设为默认，然后回到问答页面选择该模型。
-
-`config/config.yaml` 的 `model`、`model_profiles` 保持兼容，在页面作为只读文件配置展示；仍可通过后端 `.env`/环境变量提供凭据。选择文件方式时执行 `Copy-Item .env.example .env`，并填写 YAML 中的模型名称。`AGENTICRAG_CONFIG` 可指定其他 YAML，`AGENTICRAG_SETTINGS` 可指定供应商库。不要使用 `VITE_*` 保存 Key。本仓库不分发本机凭据和会话数据库，未配置时如实提示。
-
-OpenAI/DeepSeek 使用 AsyncOpenAI 真实增量。`supports_streaming: false`、Ollama、Xinference 明确返回完整结果模式，阶段进度仍可见。问答失败不会自动重发，也不自动切换备用模型。原有规则路由和工具选择回退会在执行摘要中标识，不是模拟回答。Critic 是规则评审，修订可能产生额外模型调用。
-
-SQLite 保存真实会话、消息、运行和事件；Chroma 保留混合检索。`system.memory_path` 为 JSON 时，在同目录创建 SQLite 并幂等导入，原文件不修改。配置目录、测试目录、退役样例不进入知识索引。
-
-演示模式已退役，`mode=demo` 返回 422。浏览器旧模式键被移除，只迁移原 `rag-session-live` 指针到 `rag-session`；对应会话不存在时创建空会话。本次隐私清理移除了当前项目本机供应商库、会话、索引、日志和旧截图，不保留这些文件的备份；截图仅展示未配置状态。该清理不改写 Git 历史、不撤销供应方 Key，也不操作其他项目或系统环境变量。
-
-## 必要验证
-
-默认测试不调用外部模型，不消耗 API 配额：
+首次使用环境文件时复制模板；如果已有 `.env`，直接编辑，保留原有配置：
 
 ```powershell
-cd frontend
-npm run lint
-npm run format:check
-npm run smoke
-npm run build
-cd ..
-.\.venv\Scripts\python.exe -B -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py -q
+Copy-Item .env.example .env
 ```
 
-本机系统临时目录权限异常时，可追加 `--basetemp=.cache/pytest-唯一名称`，指定新的专用目录，避免 pytest 清理其他数据。
-
-浏览器冒烟使用 `tests/browser_server.py` 和临时数据库，夹具仅存在于测试目录：
-
-```powershell
-cd frontend
-$env:WORKBENCH_PYTHON=(Resolve-Path ..\.venv\Scripts\python.exe).Path
-$env:PLAYWRIGHT_CHANNEL='chrome'
-npm run smoke:browser
-```
-
-无 Chrome 时安装 `npx playwright install chromium` 并移除 `PLAYWRIGHT_CHANNEL`。测试证据写 `frontend/test-results/evidence/`，不能当作真实模型截图。GitHub Actions 已配置，云端运行结果需推送后确认。
-
-## 交付材料
-
-- [AgenticRAG 要求对照、调用链改进与使用](docs/agenticrag-audit.md)
-- [前端设计、组件与生命周期](docs/frontend-design.md)
-- [接口、SSE 协议、存储与迁移](docs/api-and-storage.md)
-- [实际验证、性能数据与限制](docs/verification.md)
-- [3～5 分钟操作展示脚本](docs/demo-script.md)
-- [简历与面试材料](docs/career.md)
-- [P2 功能与接口缺口](docs/roadmap.md)
-
-原生页面保留 `/legacy`，API 文档在 `/docs`。Router、Planner、Retriever、Generator、Critic、HashEmbeddings/Chroma 检索、配置式知识图谱及 LangChain Runnable 是已有业务基础。MCP 是示例服务，Dify 仅有包装代码，不能据此声称完整插件发布或商业上线。
-
-本仓库来自 [spark0v0/AgenticRAG](https://github.com/spark0v0/AgenticRAG) 的工作区改造版本，以独立初始提交发布。凭据、运行数据、测试产物和本机缓存被 Git 忽略。
-# Tavily 联网搜索
-
-DeepSeek 负责生成，网页检索需要独立搜索服务。后端支持 Tavily：在项目根目录的本机 `.env` 中设置以下变量，然后重启 FastAPI。
+在根目录 `.env` 中设置：
 
 ```dotenv
 WEB_SEARCH_PROVIDER=tavily
-TAVILY_API_KEY=你的搜索服务密钥
+TAVILY_API_KEY=your_tavily_api_key
 ```
 
-`.env` 被 Git 忽略；不要放入 `frontend/.env`、截图或提交中。已有 `.env` 请编辑追加，不覆盖其他配置。供应商页面目前仅管理模型，搜索凭据通过后端配置。
+重启后端，在输入区选择「联网搜索」或「本地 + 联网」。调用链为：
 
-在问答输入区选择「联网搜索」或「本地 + 联网」，查看来源和执行详情中的 `web_search`。使用 Tavily basic 搜索，返回网页片段交给当前模型生成，不使用搜索平台的生成答案；每次检索可能消耗 Tavily 额度。失败不自动切换供应商或重放请求。未指定 provider 时，有 Key 使用 Tavily，否则保留覆盖有限的免费百科/即时答案搜索；显式选择 Tavily 却缺 Key 时会提示未配置。
+```text
+Retriever → web_search 工具 → HTTPX → Tavily /search
+          → 网页标题、链接与摘要 → Generator → 带引用的回答
+```
 
-已区分未配置、认证失败、请求/额度限制、超时、服务不可用及无匹配结果。不提供 Bing 接口兼容承诺，本轮只实现 Tavily。历史失败回答不会被自动重写，需要配置后手动发起新问题。
+后端通过 `httpx.AsyncClient` 调用 Tavily HTTP API，使用 `basic` 搜索，不请求 Tavily 生成答案。此路径不依赖 MCP 或 Tavily SDK。搜索失败会返回对应错误，不自动切换供应商或重复请求；Tavily 的调用额度由服务账户管理。
+
+未设置 `WEB_SEARCH_PROVIDER` 时，有 Tavily Key 则选择 Tavily，否则使用覆盖有限的 Wikipedia 与 DuckDuckGo 即时答案接口。也可显式配置 `WEB_SEARCH_PROVIDER=public`。显式选择 Tavily 但没有 Key 时会提示未配置。
+
+### 准备本地知识库
+
+仅关键词模式无需嵌入模型。使用语义或混合检索前，先下载模型：
+
+```powershell
+$env:PYTHONUTF8 = '1'
+.\.venv\Scripts\python.exe scripts/prepare_embedding.py
+```
+
+默认模型为 `BAAI/bge-small-zh-v1.5`，通过 FastEmbed / ONNX Runtime 在 CPU 上运行，输出 512 维向量。模型需要首次下载并占用本机磁盘、CPU 和内存；运行时只读取本地缓存，缺少模型会明确报错。
+
+进入 [知识库](http://127.0.0.1:8000/knowledge)，创建资料库并上传文件，索引完成后可检索预览或进入问答。每次最多 8 个文件，单文件不超过 10 MiB，整个上传请求不超过 32 MiB；文本需为 UTF-8，PDF 需包含可提取文字，不支持 OCR。完整说明见 [知识库文档](docs/knowledge-workbench.md)。
+
+## 本地开发
+
+保持后端运行，在另一个 PowerShell 窗口启动 Vite：
+
+```powershell
+npm --prefix frontend run dev
+```
+
+访问 [Vite 开发页面](http://127.0.0.1:5173)。`/api` 默认代理到端口 8000；后端使用其他端口时设置 `VITE_API_TARGET` 后启动开发服务。
+
+```powershell
+$env:VITE_API_TARGET = 'http://127.0.0.1:8001'
+npm --prefix frontend run dev
+```
+
+生产资源更新后重新执行 `npm --prefix frontend run build` 并重启后端。`vite preview` 仅提供静态预览，不替代后端服务。
+
+## 目录
+
+```text
+frontend/src/
+  api/             API 适配与 SSE 解析
+  types/           消息、来源、任务和事件类型
+  stores/          会话与知识库共享状态
+  composables/     滚动、文档轮询、运行分析等逻辑
+  components/      问答、文档、供应商与执行详情组件
+  views/           页面
+  router/ styles/  路由与主题样式
+src/
+  api/             FastAPI 路由
+  agents/          五类智能体
+  core/            执行流程编排
+  knowledge/       文档解析、索引任务与语义检索
+  retrieval/       项目资料检索
+  tools/ models/   工具与模型适配
+  memory/          SQLite 持久化
+scripts/           启动、模型准备和检索比较
+tests/            后端与浏览器服务夹具
+```
+
+## 数据与配置
+
+- **SQLite**：保存会话消息、运行事件、供应商配置，以及知识库的文档、片段和任务状态。
+- **ChromaDB**：保存检索向量；用户知识库与项目资料索引分开维护。
+- **本地文件**：上传原文和模型缓存保存在 `data/knowledge/`；通过 `AGENTICRAG_KNOWLEDGE_DIR`、`AGENTICRAG_EMBEDDING_CACHE` 可更换目录。
+- **凭据**：留在后端环境变量或供应商存储中，不放入 `VITE_*`、浏览器持久化或 Git。Windows 供应商凭据使用当前用户 DPAPI 加密，其他系统采用受文件权限限制的本地存储。
+- **备份与迁移**：停止服务后备份数据目录。旧 JSON 会话可幂等导入 SQLite，索引重建保留原文和历史证据；详见 [接口与存储](docs/api-and-storage.md)。
+
+`.env`、`data/`、数据库、模型缓存、日志和测试产物均不纳入版本控制。
+
+## 检查与测试
+
+```powershell
+npm --prefix frontend run lint
+npm --prefix frontend run format:check
+npm --prefix frontend run smoke
+npm --prefix frontend run build
+.\.venv\Scripts\python.exe -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py tests/test_agent_upgrade.py tests/test_knowledge_smoke.py -q
+```
+
+默认测试使用隔离数据和服务夹具，不需要真实 API Key。浏览器测试、模型检索比较与临时目录配置见 [测试说明](docs/verification.md)。GitHub Actions 执行静态检查、核心测试和前端构建。
+
+## 当前边界
+
+- 面向本机单用户运行，使用单进程索引队列，未提供公网认证或多 worker 任务协调。
+- Critic 检查引用结构与证据边界，不进行逐句事实核验。
+- 用户知识库使用真实 BGE 语义嵌入；未选知识库时的项目资料检索使用 BM25 与哈希向量，二者并非同一种检索实现。
+- Tavily 返回搜索摘要，未实现网页全文抓取；图片问答取决于所选模型能力。
+- 取消会终止后续执行并关闭支持异步取消的连接；同步工具可能执行到检查点或超时。
+- Function Calling 为可选工具选择适配，默认采用策略选择；MCP 提供本地示例服务，Dify 提供工具包装，尚未发布完整插件。
+
+## 文档
+
+- [系统架构](docs/architecture.md)
+- [前端设计](docs/frontend-design.md)
+- [接口、SSE 与存储](docs/api-and-storage.md)
+- [知识库与索引维护](docs/knowledge-workbench.md)
+- [测试说明](docs/verification.md)
+- [后续规划](docs/roadmap.md)
+
+项目延续自 [AgenticRAG](https://github.com/spark0v0/AgenticRAG)。
