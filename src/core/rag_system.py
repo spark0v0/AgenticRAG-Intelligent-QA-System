@@ -44,20 +44,26 @@ class AgenticRAGSystem:
         self._verified_models: Dict[str, float] = {}
 
     def _reserve_run(self, query: str, session_id: str | None, run_id: str | None,
-                     streaming: bool, listener=None) -> Execution:
+                     streaming: bool, listener=None, context=None) -> Execution:
         session_id = session_id or str(uuid.uuid4())
         run_id = run_id or str(uuid.uuid4())
         if session_id in self._session_runs:
             raise ValueError("当前会话仍在执行，请等待完成或停止后重试。")
         try:
-            self.memory.start_run(run_id, session_id, query)
+            options = context or {}
+            self.memory.start_run(run_id, session_id, query, {
+                "knowledge_base_id": options.get("knowledge_base_id", ""),
+                "search_scope": options.get("search_scope", "auto"),
+                "thinking_mode": options.get("thinking_mode", ""),
+                "model_profile": options.get("model_profile") or options.get("model_profile_id") or self.default_model_profile,
+            })
         except sqlite3.IntegrityError as exc:
             raise ValueError("运行编号重复或会话正在执行，请刷新后重试。") from exc
         self._session_runs[session_id] = run_id
         return Execution(session_id, run_id, streaming, self.memory.record_event, listener)
 
     def start_query(self, user_query: str, context=None, session_id=None, run_id=None, listener=None):
-        execution = self._reserve_run(user_query, session_id, run_id, True, listener)
+        execution = self._reserve_run(user_query, session_id, run_id, True, listener, context)
         self.memory.save_input(execution.run_id, execution.session_id, user_query,
                                self._build_attachment_records((context or {}).get("images", [])))
         task = asyncio.create_task(self._run_query(user_query, context, execution))
@@ -65,7 +71,7 @@ class AgenticRAGSystem:
         return execution, task
 
     async def query(self, user_query: str, context=None, session_id=None) -> Dict[str, Any]:
-        execution = self._reserve_run(user_query, session_id, None, False)
+        execution = self._reserve_run(user_query, session_id, None, False, context=context)
         self.memory.save_input(execution.run_id, execution.session_id, user_query,
                                self._build_attachment_records((context or {}).get("images", [])))
         self._run_tasks[execution.run_id] = asyncio.current_task()

@@ -11,6 +11,7 @@ export function useKnowledgeDocuments(id: Ref<string>) {
   let version = 0
   let disposed = false
   async function refresh(quiet = false) {
+    if (disposed) return
     clearTimeout(timer)
     controller?.abort()
     controller = new AbortController()

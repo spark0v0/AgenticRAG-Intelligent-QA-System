@@ -1,4 +1,5 @@
 import { requestJson } from './client'
+import { documentResponse, deletionResponse } from './knowledgeContract'
 import type {
   Evidence,
   KnowledgeDocument,
@@ -43,15 +44,33 @@ export const knowledgeApi = {
       { method: 'POST', headers: { 'X-Workbench-Request': '1' }, body, signal },
     )
   },
-  documentAction: (
-    id: string,
-    doc: string,
-    action: 'retry' | 'cancel' | 'delete',
-    signal?: AbortSignal,
-  ) =>
-    requestJson<KnowledgeDocument>(
-      `${base(id)}/documents/${encodeURIComponent(doc)}${action === 'delete' ? '' : `/${action}`}`,
-      { method: action === 'delete' ? 'DELETE' : 'POST', headers, signal },
+  retryDocument: async (id: string, doc: string, signal?: AbortSignal) =>
+    documentResponse(
+      await requestJson<unknown>(`${base(id)}/documents/${encodeURIComponent(doc)}/retry`, {
+        method: 'POST',
+        headers,
+        signal,
+      }),
+      id,
+      doc,
+    ),
+  cancelDocument: async (id: string, doc: string, signal?: AbortSignal) =>
+    documentResponse(
+      await requestJson<unknown>(`${base(id)}/documents/${encodeURIComponent(doc)}/cancel`, {
+        method: 'POST',
+        headers,
+        signal,
+      }),
+      id,
+      doc,
+    ),
+  deleteDocument: async (id: string, doc: string, signal?: AbortSignal) =>
+    deletionResponse(
+      await requestJson<unknown>(`${base(id)}/documents/${encodeURIComponent(doc)}`, {
+        method: 'DELETE',
+        headers,
+        signal,
+      }),
     ),
   evidence: (source: Source, signal?: AbortSignal) =>
     requestJson<Evidence>(

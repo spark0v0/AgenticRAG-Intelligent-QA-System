@@ -26,7 +26,6 @@ const names: Record<string, string> = {
   <main class="page-view">
     <div class="page-title">
       <div>
-        <span class="eyebrow">WORKSPACE / TOOLS</span>
         <h1>工具中心</h1>
         <p>已注册 {{ store.system?.tools.length ?? 0 }} 个工具</p>
       </div>

@@ -1,5 +1,6 @@
 .runs-page {
   padding: 32px 36px 48px;
+  background: var(--canvas);
   min-height: 0;
   overflow: auto;
   flex: 1;
@@ -9,19 +10,21 @@
 .runs-layout {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  border-top: 1px solid var(--line);
-  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  flex: 1 0 auto;
   min-height: 450px;
 }
 .runs-index {
   border-right: 1px solid var(--line);
-  padding: 22px 18px 0 0;
+  padding: 20px 16px;
   display: flex;
   flex-direction: column;
 }
 .runs-index .search-field {
   width: 100%;
-  font-size: 13px;
+  font-size: 14px;
 }
 .run-filters {
   display: flex;
@@ -30,7 +33,7 @@
 }
 .run-filters button {
   flex: 1;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   padding: 6px;
   border-radius: 4px;
@@ -50,11 +53,11 @@
   border: 1px solid transparent;
   border-bottom-color: var(--line);
   padding: 15px 12px;
-  border-radius: 5px;
+  border-radius: 9px;
   margin-bottom: 7px;
 }
 .run-index-item.selected {
-  border-color: #adc0ee;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
   background: var(--accent-soft);
 }
 .run-index-item:hover {
@@ -64,15 +67,15 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 .run-index-meta time {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 13px;
 }
 .run-index-item strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -86,7 +89,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .status-indicator {
   display: inline-block;
@@ -110,7 +113,7 @@
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   padding: 14px 0;
 }
 .pagination > span:first-child {
@@ -121,7 +124,7 @@
 }
 .run-detail {
   min-width: 0;
-  padding: 22px 0 0 26px;
+  padding: 24px;
 }
 .run-detail-heading {
   display: flex;
@@ -131,7 +134,7 @@
 }
 .run-detail-heading > code {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .run-detail-heading > div {
   margin-left: auto;
@@ -161,7 +164,7 @@
   padding-left: 0;
 }
 .run-metrics span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   display: block;
   margin-bottom: 12px;
@@ -172,7 +175,7 @@
   white-space: nowrap;
 }
 .run-metrics small {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin: 0 7px;
   font-weight: 400;
@@ -189,7 +192,7 @@
   padding: 15px 0;
   color: var(--muted);
   border-bottom: 2px solid transparent;
-  font-size: 13px;
+  font-size: 14px;
 }
 .analysis-tabs button.active {
   color: var(--accent);
@@ -203,7 +206,7 @@
   grid-template-columns: 128px minmax(30px, 1fr) 78px;
   gap: 14px;
   align-items: center;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   padding: 0 12px 12px;
 }
@@ -233,11 +236,11 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .waterfall-node small {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin-top: 5px;
 }
@@ -297,14 +300,14 @@
   color: var(--accent);
   width: 36px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .node-inspector h3 {
-  font-size: 14px;
+  font-size: 15px;
   margin: 0 0 5px;
 }
 .node-inspector header > div > span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 .node-inspector header > .subtle-badge {
@@ -321,7 +324,7 @@
 }
 .node-io p {
   line-height: 1.9;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -330,7 +333,7 @@
   overflow: auto;
 }
 .node-inspector pre {
-  font-size: 12px;
+  font-size: 13px;
   max-height: 350px;
 }
 .node-tools {
@@ -344,7 +347,7 @@
 }
 .evidence-item {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 18px;
   min-width: 0;
 }
@@ -355,14 +358,14 @@
   margin-bottom: 16px;
 }
 .evidence-item h3 {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   overflow-wrap: anywhere;
   display: block;
   margin: 0;
 }
 .evidence-item > a {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   overflow-wrap: anywhere;
   display: block;
@@ -370,7 +373,7 @@
 }
 .evidence-item p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.9;
   margin: 12px 0 0;
   white-space: pre-wrap;
@@ -406,7 +409,7 @@
   padding-block: 16px;
   border-bottom: 1px solid var(--line);
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 .node-times > div {
   display: flex;
@@ -420,7 +423,7 @@
   font-variant-numeric: tabular-nums;
 }
 .waterfall-track > span {
-  font-size: 12px;
+  font-size: 13px;
 }
 @media (min-width: 1600px) {
   .runs-layout {
@@ -465,7 +468,7 @@
     min-height: 44px;
   }
   .runs-index {
-    padding: 18px 0;
+    padding: 18px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
@@ -479,8 +482,7 @@
     width: 250px;
   }
   .run-detail {
-    padding-left: 0;
-    padding-top: 8px;
+    padding: 18px;
   }
   .pagination {
     padding-block: 0;
@@ -529,7 +531,7 @@
     gap: 18px;
   }
   .analysis-tabs button {
-    font-size: 12px;
+    font-size: 13px;
     gap: 5px;
   }
   .waterfall-heading {
@@ -537,7 +539,7 @@
     gap: 8px;
   }
   .waterfall-node {
-    font-size: 12px;
+    font-size: 13px;
     gap: 6px;
   }
   .node-io {

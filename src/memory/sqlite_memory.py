@@ -44,6 +44,11 @@ class SessionMemory:
                 );
                 CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id);
             """)
+            # Additive migration: retain every existing run, including interrupted ones.
+            db.execute("BEGIN IMMEDIATE")
+            if "request" not in {row["name"] for row in db.execute("PRAGMA table_info(runs)")}:
+                db.execute("ALTER TABLE runs ADD COLUMN request TEXT")
+            db.execute("INSERT OR IGNORE INTO migrations VALUES('run-request-v1')")
         if original.suffix == ".json" and original.exists():
             self._import_json(original)
         with self.connect() as db:
@@ -127,11 +132,16 @@ class SessionMemory:
                 turn.get("run_id") or str(uuid.uuid4()), session_id,
                 turn.get("timestamp") or time.time(), json.dumps(turn, ensure_ascii=False)))
 
-    def start_run(self, run_id: str, session_id: str, query: str) -> None:
+    def start_run(self, run_id: str, session_id: str, query: str, request: dict | None = None) -> None:
+        # Store identifiers only, never arbitrary context or a provider configuration.
+        safe_request = {key: value for key, value in (request or {}).items()
+                        if key in {"knowledge_base_id", "search_scope", "thinking_mode", "model_profile"}
+                        and isinstance(value, str)}
         with self.connect() as db:
             db.execute("INSERT OR IGNORE INTO sessions VALUES(?,?)", (session_id, time.time()))
-            db.execute("INSERT INTO runs(id,session_id,status,started_at,query) VALUES(?,?,'running',?,?)",
-                       (run_id, session_id, time.time(), query))
+            db.execute("INSERT INTO runs(id,session_id,status,started_at,query,request) VALUES(?,?,'running',?,?,?)",
+                       (run_id, session_id, time.time(), query,
+                        json.dumps(safe_request, ensure_ascii=False) if request is not None else None))
 
     def finish_run(self, run_id: str, status: str, result: dict | None = None, error: str | None = None) -> None:
         with self.connect() as db:
@@ -161,12 +171,14 @@ class SessionMemory:
             inputs = {row["run_id"]: json.loads(row["payload"]) for row in db.execute(
                 "SELECT run_id,payload FROM messages WHERE session_id=? AND role='user'", (session_id,))}
         return [{**dict(row), "attachments": inputs.get(row["id"], {}).get("attachments", []),
+                 "request": json.loads(row["request"]) if row["request"] else None,
                  "result": json.loads(row["result"]) if row["result"] else None} for row in rows]
 
     def get_run(self, run_id: str) -> dict | None:
         with self.connect() as db:
             row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-        return {**dict(row), "result": json.loads(row["result"]) if row["result"] else None} if row else None
+        return {**dict(row), "request": json.loads(row["request"]) if row["request"] else None,
+                "result": json.loads(row["result"]) if row["result"] else None} if row else None
 
     def search_runs(self, search: str, status: str, offset: int, limit: int) -> dict:
         where = "WHERE (?='' OR instr(lower(query),lower(?))>0) AND (?='' OR status=?)"

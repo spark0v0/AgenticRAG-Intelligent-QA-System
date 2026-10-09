@@ -25,6 +25,27 @@
 
 请求 context 只接收 thinking_mode/location/retrieval_mode/strategy/search_scope/knowledge_base_id，不能从浏览器注入 provider、api_key 或 model_config。图片 schema、最大长度、思考模式与模型档案均校验。不支持的参数返回 422；同会话并发/重复运行 ID 返回 409。运行后错误通过 error 事件传达，因为 HTTP 已经是 200。
 
+## 请求参数快照
+
+`GET /api/sessions/{id}` 的 runs 和 `GET /api/runs/{id}` 新增可空字段 `request`：
+
+```json
+{
+  "knowledge_base_id": "library-id",
+  "search_scope": "local",
+  "thinking_mode": "retrieval",
+  "model_profile": "default"
+}
+```
+
+在启动执行任务前与 runs 记录同时落库，成功、失败、取消或重启恢复都保留。只允许以上四个字符串字段，不保存任意 context、供应商配置或 Key；问题、图片仍由原有输入记录保存。最终检索计划继续写在 result.retrieval_plan，不能与请求快照混同。旧行 request 为 null，前端提供兼容提示。
+
+启动时在事务中通过 PRAGMA table_info 检查 runs.request，缺少时执行 ALTER TABLE ADD COLUMN request TEXT，并记录 run-request-v1；可以重复启动，不改写原有行、不清空历史，也不重建 Chroma。
+
+前端统一请求 `/api/...`，Vite 代理原样保留前缀；生产由 FastAPI 同源处理相同 URL。供应商与知识库仅提供 `/api` 下的接口。普通 JSON 请求使用 30 秒客户端超时，响应 Content-Type 不符合 JSON 时提示检查代理；SSE 走独立 Fetch 与事件流解析，不套普通 JSON 超时。
+
+文档动作契约：retry/cancel 返回完整 KnowledgeDocument，DELETE 返回 `{ "status": "deleting" | "deleted" }`。前端按动作拆分方法，对文档标识、所属库、任务及删除状态做边界校验；收到 deleting 只代表进入清理流程，完成情况以文档列表为准。
+
 ## SSE 协议
 
 ```text

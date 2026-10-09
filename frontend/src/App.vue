@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkbench } from './stores/workbench'
 import AppIcon from './components/AppIcon.vue'
@@ -9,6 +9,16 @@ const store = useWorkbench()
 const route = useRoute()
 const router = useRouter()
 const sidebarOpen = ref(false)
+const navigationButton = ref<HTMLButtonElement>()
+async function openNavigation() {
+  sidebarOpen.value = true
+  await nextTick()
+  document.querySelector<HTMLAnchorElement>('#workspace-navigation a')?.focus()
+}
+function closeNavigation() {
+  sidebarOpen.value = false
+  navigationButton.value?.focus()
+}
 watch(
   () => store.theme,
   (value) => (document.documentElement.dataset.theme = value),
@@ -41,36 +51,54 @@ async function selectSession(id: string) {
 </script>
 <template>
   <div class="app-shell">
+    <header class="topbar">
+      <div class="header-identity">
+        <button
+          ref="navigationButton"
+          class="icon-button mobile-only"
+          aria-label="打开导航"
+          :aria-expanded="sidebarOpen"
+          aria-controls="workspace-navigation"
+          @click="openNavigation"
+        >
+          <AppIcon name="menu" />
+        </button>
+        <a class="brand" href="/chat" @click.prevent="newChat">
+          <span class="brand-mark"><AppIcon name="branch" :size="22" /></span>
+          <span>Agentic<span class="brand-light">RAG</span></span>
+        </a>
+        <div class="breadcrumb">
+          <span>知识工作台</span><span>/</span><strong>{{ route.meta.title }}</strong>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="service-status"
+          ><i class="live-dot" :class="{ offline: !store.system || !!store.error }"></i
+          >{{ store.error || !store.system ? '服务未连接' : '服务已连接' }}</span
+        >
+        <button
+          class="icon-button"
+          :aria-label="store.theme === 'light' ? '切换深色主题' : '切换浅色主题'"
+          :title="store.theme === 'light' ? '切换深色主题' : '切换浅色主题'"
+          @click="store.toggleTheme()"
+        >
+          <AppIcon :name="store.theme === 'light' ? 'moon' : 'sun'" :size="19" />
+        </button>
+      </div>
+    </header>
     <button
       v-if="sidebarOpen"
       class="sidebar-overlay"
       aria-label="关闭导航"
-      @click="sidebarOpen = false"
+      @click="closeNavigation"
     ></button>
-    <AppSidebar :open="sidebarOpen" @new-chat="newChat" @select="selectSession" />
+    <AppSidebar
+      :open="sidebarOpen"
+      @new-chat="newChat"
+      @select="selectSession"
+      @close="closeNavigation"
+    />
     <div class="app-main">
-      <header class="topbar">
-        <div class="breadcrumb">
-          <button class="icon-button mobile-only" aria-label="打开导航" @click="sidebarOpen = true">
-            <AppIcon name="menu" /></button
-          ><span class="muted breadcrumb-root">工作台</span><span class="breadcrumb-root">/</span
-          ><strong>{{ route.meta.title }}</strong>
-        </div>
-        <div class="header-actions">
-          <span class="service-status"
-            ><i class="live-dot" :class="{ offline: !store.system || !!store.error }"></i
-            >{{ store.error || !store.system ? '服务未连接' : '服务已连接' }}</span
-          >
-          <button
-            class="icon-button"
-            :aria-label="store.theme === 'light' ? '切换深色主题' : '切换浅色主题'"
-            :title="store.theme === 'light' ? '切换深色主题' : '切换浅色主题'"
-            @click="store.toggleTheme()"
-          >
-            <AppIcon :name="store.theme === 'light' ? 'moon' : 'sun'" :size="18" />
-          </button>
-        </div>
-      </header>
       <div v-if="store.error" class="global-error" role="alert">
         <AppIcon name="alert" :size="17" />{{ store.error
         }}<button @click="store.initialize()">重新连接</button>

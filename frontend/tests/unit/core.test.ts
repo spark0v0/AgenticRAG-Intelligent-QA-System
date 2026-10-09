@@ -2,11 +2,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { readEvents } from '../../src/api/sse'
-import { api, checked, ApiError } from '../../src/api/client'
+import { api, checked, ApiError, requestJson } from '../../src/api/client'
 import { useWorkbench } from '../../src/stores/workbench'
 import { useKnowledge } from '../../src/stores/knowledge'
 import { knowledgeApi } from '../../src/api/knowledge'
 import MarkdownContent from '../../src/components/MarkdownContent.vue'
+import { ActiveRun } from '../../src/chat/activeRun'
+import type { Conversation } from '../../src/types/chat'
 import type { ExecutionEvent, SystemStatus } from '../../src/types'
 
 const event = (type: string, data: object, seq = 1, run = 'r', session = 's') => ({
@@ -215,4 +217,63 @@ it('restores library scope per conversation and never falls back when a library 
   await knowledge.refresh()
   expect(knowledge.selectedId).toBe('library-a')
   store.dispose()
+})
+
+it('reports an HTML proxy response without parsing or displaying the page body', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>private page</html>', {
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  }))
+  await expect(requestJson('/knowledge')).rejects.toThrow('接口未返回 JSON')
+})
+
+it.each(['cancelled', 'error'] as const)('restores a first %s run snapshot and retries the selected conversation only', async (status) => {
+  const store = setupStore()
+  const knowledge = useKnowledge()
+  vi.spyOn(api, 'session').mockResolvedValue({
+    session_id: 'saved', session_title: 'saved question', messages: [], trace: [], runs: [{
+      id: 'old-run', session_id: 'saved', status, started_at: 1, query: 'retry question',
+      request: { knowledge_base_id: 'library-a', search_scope: 'all', thinking_mode: 'deep', model_profile: 'fixture' },
+    }],
+  })
+  await store.loadSession('saved')
+  expect(knowledge.selectedId).toBe('library-a')
+  expect(store.searchScope).toBe('all')
+  expect(store.thinking).toBe('deep')
+  expect(store.current?.status).toBe(status)
+  expect(store.current?.draft).toBe('retry question')
+  store.newChat()
+  knowledge.selectedId = 'library-b'
+  store.thinking = 'retrieval'
+  await store.loadSession('saved')
+  vi.spyOn(api, 'stream').mockResolvedValue(response(''))
+  await store.send()
+  expect(api.stream).toHaveBeenCalledWith(expect.objectContaining({ model_profile: 'fixture',
+    context: { knowledge_base_id: 'library-a', search_scope: 'all', thinking_mode: 'deep' },
+  }), expect.any(AbortSignal))
+  expect(store.busy).toBe(false)
+  store.dispose()
+})
+
+it('checks distinct deletion and document response contracts', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ status: 'deleting' }), {
+    headers: { 'content-type': 'application/json' },
+  }))
+  await expect(knowledgeApi.deleteDocument('kb', 'doc')).resolves.toEqual({ status: 'deleting' })
+  await expect(knowledgeApi.retryDocument('kb', 'doc')).rejects.toThrow('响应格式')
+})
+
+it('a late cancellation confirmation may fix the old answer but cannot release or finish a newer run', () => {
+  const assistant: Conversation['messages'][number] = { id: 'old-assistant', role: 'assistant', content: '', timestamp: 1 }
+  const conversation: Conversation = { id: 's', title: 'old', messages: [assistant], events: [], status: 'submitting', activeRun: 'old', draft: '', images: [] }
+  const run = new ActiveRun({ query: 'old', session_id: 's', run_id: 'old', model_profile: 'fixture', images: [], context: { thinking_mode: '' } }, conversation, assistant)
+  run.fail(new Error('disconnected'))
+  run.release()
+  conversation.activeRun = 'new'
+  conversation.status = 'streaming'
+  conversation.title = 'new'
+  conversation.messages.push({ id: 'new-assistant', role: 'assistant', content: '', timestamp: 2 })
+  run.complete({ answer: 'committed old answer', sources: [], session_id: 's', session_title: 'old' })
+  run.release()
+  expect(assistant.status).toBe('success')
+  expect(conversation).toMatchObject({ activeRun: 'new', status: 'streaming', title: 'new' })
 })

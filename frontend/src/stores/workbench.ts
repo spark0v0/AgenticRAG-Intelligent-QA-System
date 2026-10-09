@@ -3,38 +3,11 @@ import { defineStore } from 'pinia'
 import { api } from '../api/client'
 import { useKnowledge } from './knowledge'
 import { readEvents } from '../api/sse'
-import type {
-  ExecutionEvent,
-  ImageAttachment,
-  Message,
-  QueryRequest,
-  RunStatus,
-  SessionSummary,
-  SystemStatus,
-} from '../types'
+import { ActiveRun } from '../chat/activeRun'
+import { restoreConversation } from '../chat/history'
+import type { Conversation } from '../types/chat'
+import type { QueryRequest, SessionSummary, SystemStatus } from '../types'
 
-interface Conversation {
-  knowledgeBaseId?: string
-  searchScope?: 'auto' | 'local' | 'web' | 'all'
-  id: string
-  title: string
-  messages: Message[]
-  events: ExecutionEvent[]
-  status: RunStatus
-  activeRun?: string
-  draft: string
-  images: ImageAttachment[]
-  error?: string
-}
-interface Pending {
-  controller: AbortController
-  payload: QueryRequest
-  timer?: ReturnType<typeof setTimeout>
-  buffer: string
-  generation: number
-  lastSeq: number
-  cancelling: boolean
-}
 const storage = {
   get(key: string) {
     try {
@@ -79,13 +52,28 @@ export const useWorkbench = defineStore('workbench', () => {
   const loadingSession = ref(false)
   const error = ref('')
   const theme = ref(storage.get('rag-theme') || 'light')
-  const pending = new Map<string, Pending>() // non-serializable resources stay outside Pinia state
+  const pending = new Map<string, ActiveRun>() // non-serializable resources stay outside Pinia state
   let loadVersion = 0
   let sessionController: AbortController | undefined
   let initVersion = 0
   let sessionsVersion = 0
-  watch(model, (value) => storage.set('rag-model', value))
-  watch(thinking, (value) => storage.set('rag-thinking', value))
+  let restoring = false
+  watch(
+    model,
+    (value) => {
+      storage.set('rag-model', value)
+      if (!restoring && current.value) current.value.modelProfile = value
+    },
+    { flush: 'sync' },
+  )
+  watch(
+    thinking,
+    (value) => {
+      storage.set('rag-thinking', value)
+      if (!restoring && current.value) current.value.thinkingMode = value
+    },
+    { flush: 'sync' },
+  )
   const current = computed(() => conversations.value[currentId.value])
   const knowledge = useKnowledge()
   watch(
@@ -93,14 +81,19 @@ export const useWorkbench = defineStore('workbench', () => {
     () => {
       const conversation = current.value
       const scope = conversation?.searchScope || (conversation?.knowledgeBaseId ? 'local' : 'auto')
+      restoring = true
       knowledge.selectedId = conversation?.knowledgeBaseId || ''
       searchScope.value = scope
+      model.value = conversation?.modelProfile ?? model.value
+      thinking.value = conversation?.thinkingMode ?? thinking.value
+      restoring = false
     },
     { flush: 'sync' },
   )
   watch(
     () => knowledge.selectedId,
     (id) => {
+      if (restoring) return
       if (current.value) current.value.knowledgeBaseId = id
       if (id) {
         if (searchScope.value !== 'all') searchScope.value = 'local'
@@ -112,7 +105,7 @@ export const useWorkbench = defineStore('workbench', () => {
   watch(
     searchScope,
     (scope) => {
-      if (current.value) current.value.searchScope = scope
+      if (!restoring && current.value) current.value.searchScope = scope
     },
     { flush: 'sync' },
   )
@@ -144,6 +137,8 @@ export const useWorkbench = defineStore('workbench', () => {
       title: '新会话',
       knowledgeBaseId: knowledge.selectedId,
       searchScope: searchScope.value,
+      modelProfile: model.value,
+      thinkingMode: thinking.value,
       messages: [],
       events: [],
       status: 'idle',
@@ -181,50 +176,8 @@ export const useWorkbench = defineStore('workbench', () => {
     try {
       const detail = await api.session(id, sessionController.signal)
       if (version !== loadVersion) return
-      const messages = detail.messages
-      for (const run of detail.runs ?? []) {
-        if (run.status === 'success' || messages.some((m) => m.run_id === run.id)) continue
-        messages.push({
-          id: `${run.id}-user`,
-          role: 'user',
-          content: run.query,
-          timestamp: run.started_at,
-          run_id: run.id,
-          attachments: run.attachments,
-        })
-        messages.push({
-          id: `${run.id}-assistant`,
-          role: 'assistant',
-          content: run.result?.answer || '',
-          timestamp: run.started_at,
-          run_id: run.id,
-          status: run.status === 'running' ? 'error' : run.status,
-          notice:
-            run.error ||
-            (run.status === 'running'
-              ? '此运行未连接到当前页面，请等待原页面完成后刷新。'
-              : '本轮已停止，以下内容是未完成草稿。'),
-        })
-      }
-      messages.sort((a, b) => a.timestamp - b.timestamp)
-      conversations.value[id] = {
-        id,
-        title: detail.session_title,
-        knowledgeBaseId: messages.findLast((m) => m.result?.retrieval_plan)?.result?.retrieval_plan
-          ?.knowledge_base_id,
-        searchScope: (messages.findLast((m) => m.result?.retrieval_plan)?.result?.retrieval_plan
-          ?.search_scope || 'auto') as Conversation['searchScope'],
-        messages,
-        events: detail.trace,
-        status: 'idle',
-        draft: '',
-        images: [],
-      }
-      const lastRun = detail.runs?.at(-1)
-      if (lastRun && ['error', 'cancelled'].includes(lastRun.status)) {
-        conversations.value[id]!.draft = lastRun.query
-        conversations.value[id]!.images = lastRun.attachments ?? []
-      }
+      conversations.value[id] = restoreConversation(detail)
+      const messages = conversations.value[id]!.messages
       currentId.value = id
       selectedRun.value = messages.findLast((m) => m.role === 'assistant')?.run_id ?? ''
       remember()
@@ -276,14 +229,6 @@ export const useWorkbench = defineStore('workbench', () => {
     theme.value = theme.value === 'light' ? 'dark' : 'light'
     storage.set('rag-theme', theme.value)
   }
-  function flush(run: Pending, assistant: Message) {
-    if (run.timer) clearTimeout(run.timer)
-    run.timer = undefined
-    if (run.buffer) {
-      assistant.content += run.buffer
-      run.buffer = ''
-    }
-  }
   async function send(text?: string) {
     const conversation = current.value
     if (!conversation || conversation.activeRun || !system.value || loadingSession.value) return
@@ -310,18 +255,10 @@ export const useWorkbench = defineStore('workbench', () => {
         knowledge_base_id: useKnowledge().selectedId || undefined,
       },
     }
-    const run: Pending = {
-      controller: new AbortController(),
-      payload,
-      buffer: '',
-      generation: 0,
-      lastSeq: 0,
-      cancelling: false,
-    }
-    pending.set(id, run)
     conversation.activeRun = id
     conversation.status = 'submitting'
     conversation.error = ''
+    conversation.restoreNotice = undefined
     conversation.title = query.slice(0, 24) || '图片问答'
     conversation.draft = ''
     conversation.images = []
@@ -343,6 +280,8 @@ export const useWorkbench = defineStore('workbench', () => {
       status: 'submitting',
     })
     const assistant = conversation.messages[conversation.messages.length - 1]!
+    const run = new ActiveRun(payload, conversation, assistant)
+    pending.set(id, run)
     selectedRun.value = id
     if (!sessions.value.some((s) => s.session_id === conversation.id))
       sessions.value.unshift({
@@ -352,91 +291,17 @@ export const useWorkbench = defineStore('workbench', () => {
         turn_count: 0,
         updated_at: timestamp,
       })
-    const onEvent = (event: ExecutionEvent) => {
-      if (event.run_id !== id || event.session_id !== conversation.id || event.seq <= run.lastSeq)
-        return
-      run.lastSeq = event.seq
-      if (event.type !== 'delta')
-        conversation.events.push(
-          event.type === 'completed'
-            ? {
-                ...event,
-                data: {
-                  result: { ...event.data.result, execution_trace: undefined, messages: undefined },
-                },
-              }
-            : event,
-        )
-      switch (event.type) {
-        case 'stage':
-          if (event.data.status === 'running') {
-            const phases: Record<string, string> = {
-              router: '正在识别请求…',
-              planner: '正在规划检索子问题…',
-              retriever: '正在检索证据…',
-              generator: '正在等待模型回答…',
-              critic: '正在检查证据引用…',
-            }
-            assistant.phase = phases[event.data.node] || '正在执行…'
-          }
-          break
-        case 'answer_start':
-          flush(run, assistant)
-          assistant.content = ''
-          run.generation = event.data.generation
-          break
-        case 'delta':
-          if (event.data.generation !== run.generation) break
-          conversation.status = 'streaming'
-          assistant.status = 'streaming'
-          run.buffer += event.data.text
-          run.timer ??= setTimeout(() => flush(run, assistant), 60)
-          break
-        case 'transport':
-          assistant.notice = event.data.message
-          break
-        case 'notice':
-          assistant.notice = event.data.message
-          break
-        case 'completed':
-          flush(run, assistant)
-          assistant.content = event.data.result.answer
-          assistant.result = event.data.result
-          assistant.status = conversation.status = 'success'
-          assistant.notice = event.data.result.model_error || ''
-          conversation.title = event.data.result.session_title || conversation.title
-          break
-        case 'error':
-          flush(run, assistant)
-          assistant.status = conversation.status = 'error'
-          assistant.notice = event.data.message
-          break
-        case 'cancelled':
-          flush(run, assistant)
-          assistant.status = conversation.status = 'cancelled'
-          assistant.notice = event.data.message
-          break
-      }
-    }
     try {
       const response = await api.stream(payload, run.controller.signal)
-      await readEvents(response, onEvent, { run_id: id, session_id: conversation.id })
+      await readEvents(response, run.receive, { run_id: id, session_id: conversation.id })
     } catch (e) {
-      flush(run, assistant)
-      if (!['success', 'cancelled', 'error'].includes(assistant.status ?? '')) {
-        assistant.status = conversation.status = run.cancelling ? 'cancelled' : 'error'
-        assistant.notice = run.cancelling ? '已停止接收。取消结果以服务端记录为准。' : messageOf(e)
-      }
+      run.fail(e)
     } finally {
-      flush(run, assistant)
-      pending.delete(id)
-      if (conversation.activeRun === id) conversation.activeRun = undefined
-      if (assistant.status === 'error' || assistant.status === 'cancelled') {
-        if (!conversation.draft) conversation.draft = query
-        if (!conversation.images.length) conversation.images = payload.images
-      }
+      run.release()
+      if (pending.get(id) === run) pending.delete(id)
       await refreshSessions().catch(() => {
-        conversation.error = '会话列表暂未刷新，回答已保留。'
+        if (!conversation.activeRun && conversation.messages.at(-1) === assistant)
+          conversation.error = '会话列表暂未刷新，回答已保留。'
       })
     }
   }
@@ -447,21 +312,15 @@ export const useWorkbench = defineStore('workbench', () => {
     run.cancelling = true
     try {
       const response = await api.cancel(id)
-      const conversation = conversations.value[run.payload.session_id]
-      const assistant = conversation?.messages.find((m) => m.id === `${id}-assistant`)
       // Completion can win the race against cancellation; the committed server result wins.
-      if (response.run?.status === 'success' && response.run.result && assistant && conversation) {
-        run.buffer = ''
-        assistant.content = response.run.result.answer
-        assistant.result = response.run.result
-        assistant.status = conversation.status = 'success'
-        assistant.notice = '本轮已在取消前完成。'
+      if (response.run?.status === 'success' && response.run.result) {
+        run.complete(response.run.result, '本轮已在取消前完成。')
       }
-      if (pending.has(id)) run.controller.abort()
+      if (pending.get(id) === run) run.abort()
     } catch {
       if (current.value?.activeRun === id)
         current.value.error = '取消确认失败，已断开连接。服务端将在检测断开后停止，请刷新核对。'
-      run.controller.abort()
+      run.abort()
     }
   }
   function dispose() {
@@ -471,8 +330,7 @@ export const useWorkbench = defineStore('workbench', () => {
     sessionController?.abort()
     for (const [id, run] of pending) {
       void api.cancel(id).catch(() => undefined)
-      run.controller.abort()
-      if (run.timer) clearTimeout(run.timer)
+      run.abort()
     }
   }
   return {

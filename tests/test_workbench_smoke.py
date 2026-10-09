@@ -1,6 +1,7 @@
 """Small offline regressions for the workbench's highest-risk contracts."""
 import asyncio
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -38,14 +39,22 @@ def test_cancel_first_run_then_retry_and_persist_final_metadata(tmp_path, monkey
     async def scenario():
         system = build_system(tmp_path)
         events = []
-        first, task = system.start_query("你好", session_id="conversation", listener=events.append)
+        original_query = system._query
+        async def wait_for_cancel(*args, **kwargs):
+            await asyncio.Event().wait()
+        monkeypatch.setattr(system, "_query", wait_for_cancel)
+        request = {"knowledge_base_id": "library-a", "search_scope": "local", "thinking_mode": "retrieval",
+                   "model_profile": "default"}
+        first, task = system.start_query("你好", context=request, session_id="conversation", listener=events.append)
         await asyncio.sleep(0.02)
         with pytest.raises(ValueError):
             system.start_query("duplicate", session_id="conversation")
         assert system.cancel_run(first.run_id)
         await asyncio.gather(task, return_exceptions=True)
         assert system.memory.list_runs("conversation")[0]["status"] == "cancelled"
+        assert SessionMemory(system.memory.storage_path).get_run(first.run_id)["request"] == request
         assert not system._run_tasks
+        monkeypatch.setattr(system, "_query", original_query)
         result = await system.query("2+3", session_id="conversation")
         detail = system.get_session_detail("conversation")
         assert result["answer"] == detail["messages"][-1]["content"]
@@ -53,6 +62,41 @@ def test_cancel_first_run_then_retry_and_persist_final_metadata(tmp_path, monkey
         assert len(system.memory.get_session("conversation")) == 1
         assert any(e["type"] == "completed" for e in detail["trace"])
         assert not system.cancel_run(first.run_id)
+    asyncio.run(scenario())
+
+
+def test_request_snapshot_upgrade_preserves_old_rows_and_allowlists_fields(tmp_path):
+    path = tmp_path / "history.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE runs(id TEXT PRIMARY KEY, session_id TEXT, status TEXT, started_at REAL, finished_at REAL, query TEXT, result TEXT, error TEXT)")
+        db.execute("INSERT INTO runs VALUES('old','s','cancelled',1,2,'original question',NULL,NULL)")
+    memory = SessionMemory(path)
+    memory.start_run("new", "s", "new question", {
+        "knowledge_base_id": "kb", "search_scope": "local", "thinking_mode": "deep", "model_profile": "fixture",
+        "api_key": "must-not-persist", "model_config": {"api_key": "must-not-persist"}, "images": ["private"],
+    })
+    memory.recover_interrupted_runs()
+    reloaded = SessionMemory(path)
+    runs = reloaded.list_runs("s")
+    assert runs[0]["query"] == "original question" and runs[0]["request"] is None
+    assert runs[1]["status"] == "error" and runs[1]["request"]["knowledge_base_id"] == "kb"
+    assert set(runs[1]["request"]) == {"knowledge_base_id", "search_scope", "thinking_mode", "model_profile"}
+    assert "must-not-persist" not in json.dumps(runs)
+
+
+def test_failed_first_run_retains_request_without_a_successful_turn(tmp_path, monkeypatch):
+    async def fail(*args, **kwargs):
+        raise ValueError("fixture failure")
+    async def scenario():
+        system = build_system(tmp_path)
+        monkeypatch.setattr(system, "_query", fail)
+        request = {"knowledge_base_id": "library-b", "search_scope": "all", "thinking_mode": "deep", "model_profile": "default"}
+        with pytest.raises(ValueError, match="fixture failure"):
+            await system.query("question", request, session_id="failed")
+        detail = system.get_session_detail("failed")
+        assert detail["messages"] == []
+        assert detail["runs"][0]["status"] == "error"
+        assert detail["runs"][0]["request"] == request
     asyncio.run(scenario())
 
 

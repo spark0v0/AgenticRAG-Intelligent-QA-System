@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElSelect, ElOption } from 'element-plus'
 import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/option/style/css'
@@ -21,10 +21,15 @@ onUnmounted(() => knowledgeController.abort())
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileBusy = ref(false)
 const readers = new Set<FileReader>()
-onUnmounted(() => {
+let fileVersion = 0
+function cancelReaders() {
+  fileVersion++
   for (const reader of readers) reader.abort()
   readers.clear()
-})
+  fileBusy.value = false
+}
+onUnmounted(cancelReaders)
+watch(() => store.currentId, cancelReaders, { flush: 'sync' })
 const modes = [
   { value: '', label: '自动决策' },
   { value: 'quick', label: '快速回答' },
@@ -35,7 +40,9 @@ async function attach(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   const conversation = store.current
-  if (!conversation) return
+  if (!conversation || fileBusy.value || store.busy) return
+  const version = ++fileVersion
+  const ownedReaders = new Set<FileReader>()
   fileBusy.value = true
   conversation.error = ''
   try {
@@ -58,7 +65,11 @@ async function attach(event: Event) {
             }
             const reader = new FileReader()
             readers.add(reader)
-            reader.onloadend = () => readers.delete(reader)
+            ownedReaders.add(reader)
+            reader.onloadend = () => {
+              readers.delete(reader)
+              ownedReaders.delete(reader)
+            }
             reader.onabort = () => reject(new Error('图片读取已取消'))
             reader.onload = () =>
               resolve({
@@ -73,12 +84,16 @@ async function attach(event: Event) {
           }),
       ),
     )
-    conversation.images.push(...images)
+    if (version === fileVersion) conversation.images.push(...images)
   } catch (e) {
-    conversation.error = e instanceof Error ? e.message : '图片读取失败'
+    if (version === fileVersion)
+      conversation.error = e instanceof Error ? e.message : '图片读取失败'
   } finally {
-    fileBusy.value = false
-    input.value = ''
+    for (const reader of ownedReaders) reader.abort()
+    if (version === fileVersion) {
+      fileBusy.value = false
+      input.value = ''
+    }
   }
 }
 function handleKey(event: KeyboardEvent) {
@@ -90,12 +105,15 @@ function handleKey(event: KeyboardEvent) {
 </script>
 <template>
   <div class="composer-area">
+    <p v-if="store.current?.restoreNotice" class="notice" role="status">
+      {{ store.current.restoreNotice }}
+    </p>
     <div v-if="store.current?.error" class="inline-error" role="alert">
       {{ store.current.error }}
     </div>
-    <div class="composer" :class="{ 'is-busy': store.busy }">
+    <div class="composer-context">
       <fieldset class="search-scope" :disabled="store.busy || store.thinking === 'quick'">
-        <legend>检索范围</legend>
+        <legend class="sr-only">检索范围</legend>
         <label
           v-for="scope in [
             { value: 'auto', label: '自动' },
@@ -112,11 +130,19 @@ function handleKey(event: KeyboardEvent) {
             :value="scope.value"
             :disabled="!!knowledge.selectedId && scope.value === 'web'"
           />
-          <span>{{ scope.label }}</span>
+          <AppIcon v-if="scope.value === 'web'" name="globe" :size="14" /><AppIcon
+            v-else-if="scope.value === 'local'"
+            name="book"
+            :size="14"
+          /><AppIcon v-else-if="scope.value === 'auto'" name="spark" :size="14" /><AppIcon
+            v-else
+            name="layers"
+            :size="14"
+          /><span>{{ scope.label }}</span>
         </label>
       </fieldset>
       <div v-if="store.thinking !== 'quick' && store.searchScope !== 'web'" class="kb-chat-select">
-        <label for="chat-knowledge">检索资料</label>
+        <label for="chat-knowledge"><AppIcon name="book" :size="14" />资料</label>
         <ElSelect
           id="chat-knowledge"
           v-model="knowledge.selectedId"
@@ -142,9 +168,17 @@ function handleKey(event: KeyboardEvent) {
             :label="item.name"
           />
         </ElSelect>
-        <RouterLink to="/knowledge">管理资料</RouterLink>
+        <RouterLink
+          to="/knowledge"
+          class="manage-knowledge"
+          aria-label="管理知识库"
+          title="管理知识库"
+          ><AppIcon name="settings" :size="16"
+        /></RouterLink>
       </div>
       <p v-if="knowledgeError" class="kb-error">{{ knowledgeError }}</p>
+    </div>
+    <div class="composer" :class="{ 'is-busy': store.busy }">
       <div v-if="store.current?.images.length" class="attachment-list">
         <div v-for="(image, index) in store.current.images" :key="index" class="attachment">
           <img :src="image.data_url" :alt="image.filename" /><span>{{ image.filename }}</span
@@ -161,7 +195,7 @@ function handleKey(event: KeyboardEvent) {
         v-if="store.current"
         v-model="store.current.draft"
         aria-label="输入问题"
-        placeholder="输入问题，或继续追问…"
+        placeholder="问点什么，或围绕你的资料展开提问…"
         maxlength="20000"
         rows="2"
         :disabled="store.busy || store.loadingSession"
@@ -225,7 +259,7 @@ function handleKey(event: KeyboardEvent) {
           title="停止本轮生成"
           @click="store.cancel()"
         >
-          <AppIcon name="stop" :size="16" />
+          <AppIcon name="stop" :size="16" /><span class="send-label">停止</span>
         </button>
         <button
           v-else
@@ -241,11 +275,14 @@ function handleKey(event: KeyboardEvent) {
           "
           @click="store.send()"
         >
-          <AppIcon name="arrow" :size="19" />
+          <span class="send-label">发送</span><AppIcon name="arrow" :size="17" />
         </button>
       </div>
     </div>
     <div class="composer-footnote">
+      <span class="composer-shortcut"
+        ><kbd>Enter</kbd> 发送 <span>·</span> <kbd>Shift + Enter</kbd> 换行</span
+      >
       <span>{{
         !store.profile?.configured
           ? '所选模型尚未配置'

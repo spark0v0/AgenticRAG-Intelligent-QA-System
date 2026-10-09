@@ -69,7 +69,16 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
         : AbortSignal.timeout(30000),
     }),
   )
-  return response.json() as Promise<T>
+  const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() || ''
+  if (contentType !== 'application/json' && !contentType.endsWith('+json')) {
+    throw new ApiError('接口未返回 JSON，请检查 /api 代理与后端地址。', response.status)
+  }
+  try {
+    return await response.json()
+  } catch (cause) {
+    if (!(cause instanceof SyntaxError)) throw cause
+    throw new ApiError('接口返回的 JSON 格式无效，请稍后重试。', response.status)
+  }
 }
 
 export const api = {

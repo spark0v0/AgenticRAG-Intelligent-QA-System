@@ -4,7 +4,8 @@
 body {
   margin: 0;
   color: var(--text);
-  background: var(--bg);
+  background: var(--canvas);
+  line-height: 1.6;
 }
 select {
   font: inherit;
@@ -32,6 +33,10 @@ button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
   -webkit-tap-highlight-color: transparent;
   border: 0;
   background: transparent;
@@ -95,7 +100,7 @@ p {
   align-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -106,9 +111,9 @@ p {
 .inline-error {
   background: var(--error-bg);
   color: var(--error);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -116,7 +121,7 @@ p {
   background: var(--warning-bg);
   color: var(--warning);
   padding: 12px 14px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   overflow-wrap: anywhere;
   display: flex;
@@ -134,7 +139,7 @@ p {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--accent);
   background: var(--accent-soft);
   padding: 3px 7px;
@@ -147,7 +152,7 @@ p {
   gap: 5px;
   align-items: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   padding: 4px 0;
 }
 .text-button:hover {
@@ -166,10 +171,10 @@ pre {
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 15px;
   font:
-    12px/1.7 Consolas,
+    13px/1.7 Consolas,
     monospace;
 }
 textarea::placeholder {
@@ -196,7 +201,7 @@ textarea::placeholder {
 .eyebrow {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 12px;
 }
 summary {
@@ -221,26 +226,26 @@ summary {
 .tiny-label {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .raw-details summary {
   color: var(--accent);
-  font-size: 12px;
+  font-size: 13px;
 }
 .raw-details pre {
-  font-size: 12px;
+  font-size: 13px;
   white-space: pre-wrap;
 }
 .page-title p {
   color: var(--muted);
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 .subtle-badge {
   display: inline-block;
   border-radius: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   background: var(--surface);
   border: 1px solid var(--line);
   padding: 4px 8px;
@@ -249,7 +254,7 @@ summary {
   display: inline-block;
   border-radius: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   background: var(--surface);
   border: 1px solid var(--line);
   padding: 4px 8px;
@@ -263,14 +268,13 @@ summary {
   align-items: center;
   gap: 18px;
   padding: 0 0 22px;
-  border-bottom: 1px solid var(--line);
 }
 .search-field {
   display: flex;
   gap: 8px;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   padding: 12px 12px;
   color: var(--muted);
@@ -280,12 +284,11 @@ summary {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  background: var(--surface);
-  border-radius: 5px;
-  padding: 4px;
+  border-bottom: 1px solid var(--line);
+  padding: 0;
 }
 .filter-tabs button {
-  font-size: 12px;
+  font-size: 13px;
   padding: 7px 12px;
   color: var(--muted);
   border-radius: 4px;
@@ -293,11 +296,12 @@ summary {
 .filter-tabs button.active {
   background: var(--bg);
   color: var(--accent);
-  box-shadow: 0 1px 3px rgba(32, 57, 41, 0.062745098);
+  box-shadow: inset 0 -2px var(--accent);
+  border-radius: 0;
 }
 .page-footnote {
   margin: 25px 0 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.8;
 }
@@ -312,6 +316,7 @@ summary {
   flex: 1;
   min-height: 0;
   padding: 32px 36px 48px;
+  background: var(--canvas);
 }
 .page-title {
   display: flex;
@@ -322,15 +327,14 @@ summary {
 }
 .page-title .eyebrow {
   color: var(--muted);
-  font:
-    12px/1.4 Consolas,
-    monospace;
+  font-size: 13px;
   display: block;
   margin-bottom: 12px;
 }
 .page-title h1 {
-  font-weight: 650;
-  font-size: 27px;
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -353,20 +357,20 @@ summary {
   justify-content: center;
   align-items: center;
   gap: 7px;
-  min-height: 38px;
-  font-size: 13px;
-  padding: 12px 13px;
-  border-radius: 6px;
+  min-height: 40px;
+  font-size: 14px;
+  padding: 9px 15px;
+  border-radius: var(--radius-sm);
 }
 .primary-button {
   display: inline-flex;
   justify-content: center;
   align-items: center;
   gap: 7px;
-  min-height: 38px;
-  font-size: 13px;
-  padding: 12px 13px;
-  border-radius: 6px;
+  min-height: 40px;
+  font-size: 14px;
+  padding: 9px 15px;
+  border-radius: var(--radius-sm);
   color: var(--on-action);
   background: var(--action);
   border: 1px solid var(--action);
@@ -380,7 +384,7 @@ summary {
   gap: 5px;
   align-items: center;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 13px;
   padding: 5px 0;
   flex-shrink: 0;
 }
@@ -390,7 +394,7 @@ summary {
 .compact {
   min-height: 32px;
   padding: 5px 12px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .section-heading h2 {
   margin: 0;
@@ -398,7 +402,7 @@ summary {
 }
 .section-heading h2 > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   margin-left: 8px;
 }
@@ -407,12 +411,12 @@ summary {
   gap: 8px;
   align-items: center;
   color: var(--success);
-  font-size: 13px;
+  font-size: 14px;
   padding: 12px 0;
   line-height: 1.6;
 }
 .protocol-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
   border: 1px solid var(--line);
@@ -427,7 +431,7 @@ summary {
   color: var(--warning);
   border-radius: 4px;
   padding: 4px 7px;
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
 }
 .status-badge.ready {
@@ -481,13 +485,13 @@ summary {
     font-size: 23px;
   }
   .page-title p {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.7;
   }
   .page-title .primary-button {
     margin-top: 0;
     padding: 8px 12px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .page-title .secondary-button {
     margin-top: 0;
@@ -501,6 +505,20 @@ summary {
   .secondary-button {
     min-height: 44px;
   }
+}
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 25%, transparent) transparent;
+}
+.el-dialog {
+  --el-dialog-border-radius: 8px;
+}
+.el-select__wrapper {
+  min-height: 36px;
 }
 @media (prefers-reduced-motion: reduce) {
   * {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElDialog, ElMessageBox, ElSelect, ElOption } from 'element-plus'
 import 'element-plus/es/components/dialog/style/css'
@@ -10,6 +10,7 @@ import { useKnowledge } from '../stores/knowledge'
 import { useWorkbench } from '../stores/workbench'
 import { useKnowledgeDocuments } from '../composables/useKnowledgeDocuments'
 import { knowledgeApi } from '../api/knowledge'
+import { indexLabels, isSearchable } from '../types/knowledge'
 import type { KnowledgeDocument, KnowledgeMode } from '../types/knowledge'
 import type { Source } from '../types'
 import AppIcon from '../components/AppIcon.vue'
@@ -21,6 +22,7 @@ const store = useKnowledge()
 const workbench = useWorkbench()
 const router = useRouter()
 const selected = ref('')
+const libraryStrip = ref<HTMLElement>()
 const { documents, loading, error: documentError, refresh } = useKnowledgeDocuments(selected)
 const current = computed(() => store.libraries.find((item) => item.id === selected.value))
 const search = ref('')
@@ -29,11 +31,18 @@ const filtered = computed(() =>
   documents.value.filter(
     (doc) =>
       doc.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase()) &&
-      (filter.value === 'all' || doc.status === filter.value || doc.job?.status === filter.value),
+      (filter.value === 'all' ||
+        (filter.value === 'completed'
+          ? isSearchable(doc)
+          : doc.status === filter.value || doc.job?.status === filter.value)),
   ),
 )
 const busy = ref(false)
-const uploading = ref(false)
+const uploadLibrary = ref('')
+const operation = ref<{ id: string; label: string }>()
+const showFeedback = computed(() => !operation.value?.id || operation.value.id === selected.value)
+const searchInput = ref<HTMLInputElement>()
+const createButton = ref<HTMLButtonElement>()
 const error = ref('')
 const feedback = ref('')
 const creating = ref(false)
@@ -56,17 +65,34 @@ watch(selected, () => {
   search.value = ''
   filter.value = 'all'
   probeMode.value = current.value?.mode === 'hybrid' ? 'hybrid' : 'keyword'
+  void nextTick(() => {
+    libraryStrip.value
+      ?.querySelector<HTMLElement>('[aria-pressed="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  })
 })
 async function load() {
   await store.refresh(signal)
   clearTimeout(libraryTimer)
-  if (!disposed && store.libraries.some((item) => item.deleting))
-    libraryTimer = setTimeout(() => void action(load), 1500)
+  if (disposed) return
+  scheduleLibraryRefresh()
   if (!store.libraries.some((item) => item.id === selected.value))
     selected.value = store.libraries[0]?.id || ''
 }
-async function action(fn: () => Promise<void>) {
-  if (busy.value) return
+function scheduleLibraryRefresh() {
+  clearTimeout(libraryTimer)
+  if (disposed || !store.libraries.some((item) => item.deleting)) return
+  libraryTimer = setTimeout(() => {
+    void load().catch(() => {
+      if (!disposed) scheduleLibraryRefresh()
+    })
+  }, 1500)
+}
+async function action(fn: () => Promise<void>, target = current.value) {
+  if (busy.value || disposed) return
+  const trigger = document.activeElement
+  const selection = selected.value
+  operation.value = target ? { id: target.id, label: target.name } : undefined
   busy.value = true
   error.value = ''
   feedback.value = ''
@@ -77,13 +103,21 @@ async function action(fn: () => Promise<void>) {
       error.value = cause instanceof Error ? cause.message : '操作未完成，请重试'
   } finally {
     busy.value = false
+    await nextTick()
+    // Do not steal focus after the user has switched libraries or focused another control.
+    if (!disposed && selection === selected.value && document.activeElement === document.body) {
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus()
+      else (searchInput.value ?? createButton.value)?.focus()
+    }
   }
 }
 function create() {
   return action(async () => {
     const item = await knowledgeApi.create(name.value.trim(), mode.value, signal)
     await load()
+    if (disposed) return
     selected.value = item.id
+    operation.value = { id: item.id, label: item.name }
     creating.value = false
     name.value = ''
     feedback.value = '知识库已创建，现在可以上传资料。'
@@ -101,6 +135,7 @@ function rename() {
       cancelButtonText: '取消',
     })
     await knowledgeApi.rename(item.id, value.value.trim(), signal)
+    feedback.value = `名称已改为“${value.value.trim()}”。`
     await load()
   })
 }
@@ -108,12 +143,15 @@ function remove() {
   const item = current.value
   if (!item) return
   void action(async () => {
+    // The selected library and its controls can disappear after confirmation.
+    createButton.value?.focus({ preventScroll: true })
     await ElMessageBox.confirm(
       `删除“${item.name}”中的原文和检索索引。历史回答仍保留证据快照。`,
       '删除知识库',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '保留' },
     )
     const result = await knowledgeApi.remove(item.id, signal)
+    operation.value = { id: '', label: item.name }
     feedback.value = result.message || '知识库已删除'
     await load()
     await refresh()
@@ -122,27 +160,46 @@ function remove() {
 function upload(files: File[]) {
   const key = selected.value
   void action(async () => {
-    uploading.value = true
+    uploadLibrary.value = key
     try {
       const result = await knowledgeApi.upload(key, files, signal)
       const duplicates = result.items.filter((item) => item.duplicate).length
-      feedback.value = `${result.items.length - duplicates} 个文档已进入索引队列${duplicates ? `，${duplicates} 个重复文件已跳过` : ''}。`
+      const uploaded = result.items
+        .filter((item) => !item.duplicate)
+        .map((item) => item.document.name)
+        .join('、')
+      const skipped = result.items
+        .filter((item) => item.duplicate)
+        .map((item) => item.document.name)
+        .join('、')
+      feedback.value = `${uploaded ? `已接收 ${uploaded}，后台索引状态见文档列表。` : ''}${duplicates ? `${duplicates} 个重复文件已跳过：${skipped}。` : ''}`
       await load()
       if (key === selected.value) await refresh()
     } finally {
-      uploading.value = false
+      uploadLibrary.value = ''
     }
   })
 }
 function documentAction(doc: KnowledgeDocument, kind: 'retry' | 'cancel' | 'delete') {
   void action(async () => {
-    if (kind === 'delete')
+    if (kind === 'delete') {
+      // Give the dialog a stable return target instead of a row that is about to disappear.
+      searchInput.value?.focus({ preventScroll: true })
       await ElMessageBox.confirm(
         `删除“${doc.name}”的原文和索引？历史证据快照将保留。`,
         '删除文档',
         { confirmButtonText: '删除', cancelButtonText: '保留', type: 'warning' },
       )
-    await knowledgeApi.documentAction(doc.kb_id, doc.id, kind, signal)
+    }
+    if (kind === 'delete') {
+      const result = await knowledgeApi.deleteDocument(doc.kb_id, doc.id, signal)
+      feedback.value = `“${doc.name}”${result.status === 'deleted' ? '已删除。' : '正在清理原文与索引。'}`
+    } else {
+      const result = await (
+        kind === 'retry' ? knowledgeApi.retryDocument : knowledgeApi.cancelDocument
+      )(doc.kb_id, doc.id, signal)
+      feedback.value = `“${doc.name}”后台任务：${indexLabels[result.job?.status ?? result.status]}。`
+    }
     if (selected.value === doc.kb_id) await refresh()
     await load()
   })
@@ -202,21 +259,25 @@ onBeforeUnmount(() => {
   <main class="kb-page">
     <header class="kb-page-heading">
       <div>
-        <span class="kb-eyebrow">你的资料，回答的依据</span>
-        <h1>知识库</h1>
-        <p>整理本地文档，在问答中追溯每一份证据。</p>
+        <h1>
+          知识库<span class="page-count">{{ store.libraries.length }}</span>
+        </h1>
+        <p>按项目整理文档，上传后即可检索与提问。</p>
       </div>
-      <button class="kb-primary" :disabled="busy" @click="creating = true">
+      <button ref="createButton" class="kb-primary" :disabled="busy" @click="creating = true">
         <AppIcon name="plus" :size="17" />创建知识库
       </button>
     </header>
-    <p v-if="error" role="alert" class="kb-error">
-      {{ error }} <button :disabled="busy" @click="action(load)">重新加载</button>
+    <p v-if="error && showFeedback" role="alert" class="kb-error">
+      {{ operation?.label ? `知识库“${operation.label}”：` : '' }}{{ error }}
+      <button :disabled="busy" @click="action(load)">重新加载</button>
     </p>
-    <p v-if="feedback" role="status" class="kb-feedback">{{ feedback }}</p>
+    <p v-if="feedback && showFeedback" role="status" class="kb-feedback">
+      {{ operation?.label ? `知识库“${operation.label}”：` : '' }}{{ feedback }}
+    </p>
     <div class="kb-layout">
-      <aside class="kb-libraries" aria-label="知识库列表">
-        <span class="kb-section-label">全部知识库 · {{ store.libraries.length }}</span>
+      <aside ref="libraryStrip" class="kb-libraries" aria-label="知识库列表">
+        <span class="sr-only">全部知识库</span>
         <button
           v-for="item in store.libraries"
           :key="item.id"
@@ -224,7 +285,8 @@ onBeforeUnmount(() => {
           :aria-pressed="selected === item.id"
           @click="selected = item.id"
         >
-          <AppIcon name="book" :size="19" /><span
+          <span class="kb-library-icon"><AppIcon name="book" :size="20" /></span
+          ><span
             ><strong>{{ item.name }}</strong
             ><small
               >{{ item.document_count }} 个文档 ·
@@ -241,7 +303,7 @@ onBeforeUnmount(() => {
           <div>
             <h2>{{ current.name }}</h2>
             <p>
-              {{ documents.filter((doc) => doc.status === 'completed').length }} 个文档可检索 ·
+              {{ documents.filter(isSearchable).length }} 个文档可检索 ·
               {{ current.mode === 'hybrid' ? 'BGE 中文语义 + BM25 融合' : 'BM25 关键词检索' }}
             </p>
           </div>
@@ -254,13 +316,16 @@ onBeforeUnmount(() => {
           </div>
         </header>
         <KnowledgeUpload
+          :key="selected"
+          :uploading="uploadLibrary === selected"
           :limits="store.limits"
-          :busy="busy || uploading || !!current.deleting"
+          :busy="busy || !!current.deleting"
           @upload="upload"
         />
         <div class="kb-filter">
           <label class="kb-search"
             ><AppIcon name="search" :size="17" /><input
+              ref="searchInput"
               v-model="search"
               placeholder="搜索文档名称"
               aria-label="搜索文档名称" /></label

@@ -1,4 +1,11 @@
 export type RunStatus = 'idle' | 'submitting' | 'streaming' | 'success' | 'error' | 'cancelled'
+export type SearchScope = 'auto' | 'local' | 'web' | 'all'
+export interface RequestSnapshot {
+  knowledge_base_id: string
+  search_scope: SearchScope
+  thinking_mode: string
+  model_profile: string
+}
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 export interface ImageAttachment {
   type: 'image'
@@ -96,6 +103,7 @@ export interface RunRecord {
   result?: QueryResult
   error?: string
   attachments?: ImageAttachment[]
+  request?: RequestSnapshot | null
 }
 export interface SessionDetail {
   session_id: string

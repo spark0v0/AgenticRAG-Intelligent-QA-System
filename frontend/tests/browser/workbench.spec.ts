@@ -78,6 +78,15 @@ test('question, cancellation, retry, history, sources and responsive pages', asy
     true,
   )
   await page.screenshot({ path: 'test-results/evidence/fixture-mobile.png', fullPage: true })
+  // Empty pages must not inherit message auto-follow, even when the welcome list overflows.
+  await page.setViewportSize({ width: 320, height: 844 })
+  await page.getByRole('link', { name: 'AgenticRAG', exact: true }).click()
+  await expect(page.locator('.welcome h1')).toBeInViewport()
+  await expect.poll(() => page.locator('.conversation-scroll').evaluate((el) => el.scrollTop)).toBe(0)
+  await expect(input).toBeEnabled()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: 'test-results/evidence/fixture-welcome-320.png' })
   writeFileSync(
     'test-results/evidence/fixture-metrics.json',
     JSON.stringify({ fixture: true, firstDeltaMs, errors }, null, 2),
@@ -128,9 +137,37 @@ test('long history fixture: restore, scroll and type without automatic submissio
   const content =
     '## 历史长回答\n\n' +
     '这是用于测量浏览器渲染的本地长消息样本。'.repeat(120) +
-    '\n```typescript\nconst value = 42\n```'
+    '\n```typescript\n' + Array.from({ length: 60 }, (_, i) => `const item${i}: string = 'isolated-code-line-${i}'`).join('\n') + '\n```'
   await page.addInitScript(() => {
     localStorage.setItem('rag-session', 'performance-fixture')
+    const originalFetch = window.fetch
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args)
+      if (response.url.endsWith('/api/sessions/performance-fixture')) {
+        const parse = response.json.bind(response)
+        response.json = async () => {
+          const value = await parse()
+          performance.mark('fixture-data-ready')
+          return value
+        }
+      }
+      return response
+    }
+    new PerformanceObserver((list) => {
+      for (const task of list.getEntries())
+        performance.mark('fixture-long-task', { startTime: task.startTime, detail: { duration: task.duration } })
+    }).observe({ type: 'longtask', buffered: true })
+    const observer = new MutationObserver(() => {
+      if (document.querySelectorAll('.message.assistant .markdown').length !== 30) return
+      observer.disconnect()
+      performance.mark('fixture-dom-committed')
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        performance.mark('fixture-render-ready')
+        performance.measure('fixture-render-window', 'fixture-data-ready', 'fixture-render-ready')
+        performance.measure('fixture-vue-dom', 'fixture-data-ready', 'fixture-dom-committed')
+      }))
+    })
+    observer.observe(document, { childList: true, subtree: true })
   })
   await page.route('**/api/sessions', (route) =>
     route.fulfill({
@@ -168,6 +205,14 @@ test('long history fixture: restore, scroll and type without automatic submissio
   await page.goto('/chat')
   await expect(page.locator('.message')).toHaveCount(60)
   const historyReadyMs = Date.now() - start
+  await page.waitForFunction(() => performance.getEntriesByName('fixture-render-window').length > 0)
+  const rendering = await page.evaluate(() => ({
+    vueDomMs: performance.getEntriesByName('fixture-vue-dom')[0]!.duration,
+    renderWindowMs: performance.getEntriesByName('fixture-render-window')[0]!.duration,
+    longTasks: performance.getEntriesByName('fixture-long-task').map((entry) => ({
+      start: entry.startTime, duration: (entry as PerformanceMark).detail.duration,
+    })),
+  }))
   const input = page.getByRole('textbox', { name: '输入问题' })
   const typingStart = Date.now()
   await input.fill('长会话仍可编辑')
@@ -179,11 +224,18 @@ test('long history fixture: restore, scroll and type without automatic submissio
   })
   await expect(page.getByRole('button', { name: '回到底部' })).toBeVisible()
   await page.getByRole('button', { name: '回到底部' }).click()
+  const scrollFrameMs = await page.locator('.conversation-scroll').evaluate(async (el) => {
+    const started = performance.now()
+    el.scrollTop = el.scrollHeight
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    return performance.now() - started
+  })
+  expect(await page.locator('.conversation-scroll').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(100)
   mkdirSync('test-results/evidence', { recursive: true })
   writeFileSync(
     'test-results/evidence/history-metrics.json',
     JSON.stringify(
-      { fixture: true, messages: 60, answerCharacters: content.length, historyReadyMs, inputMs },
+      { fixture: true, messages: 60, codeLinesPerAnswer: 60, answerCharacters: content.length, historyReadyMs, inputMs, scrollFrameMs, ...rendering, browser: await page.evaluate(() => navigator.userAgent) },
       null,
       2,
     ),

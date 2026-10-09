@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import { useAutoScroll } from '../composables/useAutoScroll'
 import AppIcon from '../components/AppIcon.vue'
@@ -15,12 +15,19 @@ const contentKey = computed(
   () =>
     `${store.currentId}:${store.current?.messages.length}:${store.current?.messages.at(-1)?.content.length}:${store.current?.status}`,
 )
-const { following, onScroll, toBottom } = useAutoScroll(scroller, () => contentKey.value)
+const { following, onScroll, toBottom } = useAutoScroll(
+  scroller,
+  () => contentKey.value,
+  () => !!store.current?.messages.length,
+)
 watch(
   () => store.currentId,
-  () => {
+  async () => {
     evidenceRequest.value = undefined
-    void toBottom()
+    following.value = true
+    await nextTick()
+    if (store.current?.messages.length) await toBottom()
+    else if (scroller.value) scroller.value.scrollTop = 0
   },
 )
 const prompts = [
@@ -42,12 +49,6 @@ const prompts = [
     description: '如何设计可靠的流式问答交互？',
     text: '如何设计可靠的流式问答交互？',
   },
-  {
-    icon: 'spark',
-    title: '从一个问题开始',
-    description: '你好，请介绍一下你能做什么',
-    text: '你好，请介绍一下你能做什么',
-  },
 ]
 function inspect(runId: string, sourceId?: string) {
   store.selectedRun = runId
@@ -65,7 +66,7 @@ function choosePrompt(text: string) {
 <template>
   <main class="chat-workspace">
     <section class="conversation-pane" :class="{ 'is-empty': empty }">
-      <div class="conversation-heading">
+      <div v-if="!empty || showPanel" class="conversation-heading">
         <div>
           <span class="live-dot" :class="{ offline: !store.system }"></span
           ><span>{{ store.current?.messages.length ? store.current.title : '新会话' }}</span
@@ -83,12 +84,9 @@ function choosePrompt(text: string) {
       <div ref="scroller" class="conversation-scroll" @scroll="onScroll">
         <div v-if="store.loadingSession" class="loading-session" role="status">正在恢复会话…</div>
         <div v-else-if="!store.current?.messages.length" class="welcome">
-          <h1>AgenticRAG<span>智能问答与检索</span></h1>
-          <div class="welcome-model">
-            <AppIcon name="server" :size="15" />{{ store.profile?.label || '尚未选择模型'
-            }}<span class="status-badge" :class="{ ready: store.profile?.configured }">{{
-              store.profile?.configured ? '已配置' : '待配置'
-            }}</span>
+          <div class="welcome-intro">
+            <h1>开始一个新问题</h1>
+            <p class="welcome-description">查阅本地资料，结合网络信息，让每个问题都有据可循。</p>
           </div>
           <RouterLink
             v-if="store.system && !store.profile?.configured"
@@ -97,6 +95,10 @@ function choosePrompt(text: string) {
             ><AppIcon name="settings" :size="17" />配置可用模型</RouterLink
           >
           <ChatComposer />
+          <div class="suggestion-heading">
+            <h2>试着问一问</h2>
+            <span>选择一个问题，继续编辑后发送</span>
+          </div>
           <div class="suggestion-grid" aria-label="建议问题">
             <button
               v-for="prompt in prompts"
@@ -104,20 +106,19 @@ function choosePrompt(text: string) {
               :disabled="!store.system || store.loading"
               @click="choosePrompt(prompt.text)"
             >
-              <span class="suggestion-icon"><AppIcon :name="prompt.icon" :size="20" /></span
-              ><strong>{{ prompt.title }}</strong>
-              <p>{{ prompt.description }}</p>
-              <AppIcon name="diagonal" :size="17" />
+              <AppIcon :name="prompt.icon" :size="19" />
+              <span class="suggestion-copy"
+                ><strong>{{ prompt.description }}</strong
+                ><small>{{ prompt.title }}</small></span
+              >
+              <span class="suggestion-use">填入问题<AppIcon name="right" :size="16" /></span>
             </button>
           </div>
           <div class="workspace-links">
-            <RouterLink to="/runs"
-              ><AppIcon name="pulse" :size="16" />运行记录<AppIcon
-                name="right"
-                :size="14" /></RouterLink
-            ><RouterLink to="/providers"
-              ><AppIcon name="settings" :size="16" />模型供应商<AppIcon name="right" :size="14"
-            /></RouterLink>
+            <RouterLink to="/knowledge"
+              ><AppIcon name="book" :size="15" />管理我的知识库</RouterLink
+            >
+            <RouterLink to="/runs"><AppIcon name="pulse" :size="15" />查看运行记录</RouterLink>
           </div>
         </div>
         <div v-else class="messages">
@@ -130,13 +131,11 @@ function choosePrompt(text: string) {
           />
         </div>
       </div>
-      <button
-        v-if="!following && store.current?.messages.length"
-        class="scroll-bottom"
-        @click="toBottom()"
-      >
-        <AppIcon name="down" :size="14" />回到底部
-      </button>
+      <div v-if="!following && store.current?.messages.length" class="scroll-return">
+        <button class="scroll-bottom" @click="toBottom()">
+          <AppIcon name="down" :size="14" />回到底部
+        </button>
+      </div>
       <ChatComposer v-if="!empty" />
     </section>
     <div v-if="showPanel" class="panel-container">

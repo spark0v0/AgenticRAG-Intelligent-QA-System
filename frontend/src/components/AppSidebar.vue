@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import AppIcon from './AppIcon.vue'
 defineProps<{ open: boolean }>()
-defineEmits<{ newChat: []; select: [id: string] }>()
+defineEmits<{ newChat: []; select: [id: string]; close: [] }>()
 const store = useWorkbench()
 const search = ref('')
 const filtered = computed(() =>
@@ -18,13 +18,18 @@ function dateLabel(timestamp: number) {
 }
 </script>
 <template>
-  <aside class="sidebar" :class="{ 'is-open': open }">
-    <a class="brand" href="/chat" @click.prevent="$emit('newChat')"
-      ><span class="brand-mark"><AppIcon name="branch" :size="25" /></span
-      ><span
-        >Agentic<span class="brand-light">RAG</span><small>智能问答与检索工作台</small></span
-      ></a
-    >
+  <aside
+    id="workspace-navigation"
+    class="sidebar"
+    :class="{ 'is-open': open }"
+    @keydown.esc="$emit('close')"
+  >
+    <div class="sidebar-heading">
+      <span>我的工作台</span
+      ><button class="icon-button mobile-only" aria-label="收起导航" @click="$emit('close')">
+        <AppIcon name="close" :size="18" />
+      </button>
+    </div>
     <button class="new-chat-button" @click="$emit('newChat')">
       <AppIcon name="plus" :size="18" />新建会话
     </button>
@@ -34,12 +39,13 @@ function dateLabel(timestamp: number) {
       ></RouterLink>
       <RouterLink to="/knowledge"><AppIcon name="book" :size="18" />知识库</RouterLink>
       <RouterLink to="/runs"><AppIcon name="pulse" :size="18" />运行分析</RouterLink>
+      <span class="nav-section-label">管理</span>
       <RouterLink to="/tools"><AppIcon name="layers" :size="18" />工具中心</RouterLink>
       <RouterLink to="/providers"><AppIcon name="server" :size="18" />模型供应商</RouterLink>
       <RouterLink to="/system"><AppIcon name="grid" :size="18" />系统概览</RouterLink>
     </nav>
     <div class="history-heading">
-      <span>历史会话</span
+      <span>最近会话</span
       ><button
         class="icon-button"
         aria-label="刷新历史会话"
@@ -57,7 +63,7 @@ function dateLabel(timestamp: number) {
     /></label>
     <div class="session-list">
       <p v-if="!filtered.length" class="sidebar-empty">
-        {{ search ? '没有匹配的会话' : '暂无历史会话' }}
+        {{ search ? '没有匹配的会话' : '提问后，会话将保存在这里' }}
       </p>
       <button
         v-for="session in filtered"

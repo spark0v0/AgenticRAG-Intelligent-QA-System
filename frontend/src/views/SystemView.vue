@@ -10,7 +10,6 @@ function time(value?: number) {
   <main class="page-view">
     <div class="page-title">
       <div>
-        <span class="eyebrow">WORKSPACE / SYSTEM</span>
         <h1>系统概览</h1>
         <p>模型档案与服务状态</p>
       </div>

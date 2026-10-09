@@ -2,8 +2,9 @@ param([ValidateRange(1024, 65535)][int]$Port = 8000)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $pythonPath)) { throw '请先按 README 创建当前项目自己的 .venv 并安装依赖。' }
-if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'frontend\dist\index.html'))) { throw '请先在 frontend 运行 npm run build。' }
+# Keep this script ASCII-compatible for both Windows PowerShell 5.1 and PowerShell 7.
+if (-not (Test-Path -LiteralPath $pythonPath)) { throw 'Create this project''s .venv and install dependencies as described in README first.' }
+if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'frontend\dist\index.html'))) { throw 'Build the frontend first: npm --prefix frontend run build' }
 Push-Location $projectRoot
 try {
     $env:PYTHONUTF8 = '1'

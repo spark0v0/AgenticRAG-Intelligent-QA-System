@@ -69,3 +69,5 @@ export const indexLabels: Record<IndexStatus, string> = {
 }
 export const activeIndex = (status?: IndexStatus) =>
   !!status && ['queued', 'parsing', 'splitting', 'indexing', 'deleting'].includes(status)
+export const isSearchable = (doc: KnowledgeDocument) =>
+  doc.status === 'completed' && !doc.needs_rebuild && doc.chunk_count > 0
