@@ -204,5 +204,3 @@ npm --prefix frontend run build
 - [知识库与索引维护](docs/knowledge-workbench.md)
 - [测试说明](docs/verification.md)
 - [后续规划](docs/roadmap.md)
-
-项目延续自 [AgenticRAG](https://github.com/spark0v0/AgenticRAG)。
