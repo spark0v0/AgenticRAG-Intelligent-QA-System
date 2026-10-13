@@ -83,7 +83,8 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
 
 export const api = {
   status: () => requestJson<SystemStatus>('/status'),
-  sessions: () => requestJson<{ items: SessionSummary[] }>('/sessions'),
+  sessions: (signal?: AbortSignal) =>
+    requestJson<{ items: SessionSummary[] }>('/sessions', { signal }),
   session: (id: string, signal?: AbortSignal) =>
     requestJson<SessionDetail>(`/sessions/${encodeURIComponent(id)}`, { signal }),
   cancel: (id: string) =>

@@ -70,6 +70,16 @@ powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 
 访问 [问答工作台](http://127.0.0.1:8000/chat)。前端构建由 FastAPI 同源提供，支持已配置的 SPA 路由刷新。API 文档位于 [Swagger UI](http://127.0.0.1:8000/docs)。默认监听本机并使用单个 Uvicorn worker。
 
+完成上面的 Python 环境安装后，日常使用可直接双击根目录 **`start.bat`**：检查项目自己的 `.venv` 和 npm，缺少前端依赖时执行 `npm ci`，重新构建前端，启动服务并在页面就绪后打开默认浏览器。保留启动窗口，使用 `Ctrl+C` 停止；失败时窗口会保留错误信息。脚本只使用本项目环境，不读取其他项目的虚拟环境，也不自动下载嵌入模型或调用回答服务。
+
+如果端口上的页面与当前构建一致，启动器直接打开已有服务；其他程序占用端口时明确报错，不强制结束进程。修改后端代码后需要先停止旧服务再启动。
+
+```powershell
+.\start.bat                  # 默认 8000，自动构建并打开浏览器
+.\start.bat -Port 8001       # 使用其他端口
+.\start.bat -NoBrowser       # 启动但不自动打开浏览器
+```
+
 自定义端口：
 
 ```powershell

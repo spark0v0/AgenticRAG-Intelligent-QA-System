@@ -1,14 +1,66 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import AppIcon from './AppIcon.vue'
-defineProps<{ open: boolean }>()
-defineEmits<{ newChat: []; select: [id: string]; close: [] }>()
+const props = defineProps<{ open: boolean; mobile: boolean }>()
+const emit = defineEmits<{ newChat: []; select: [id: string]; close: []; navigate: [] }>()
 const store = useWorkbench()
 const search = ref('')
+const searchInput = ref<HTMLInputElement>()
+const navigation = ref<HTMLElement>()
+const refreshing = ref(false)
+const refreshError = ref('')
+let refreshController: AbortController | undefined
+onBeforeUnmount(() => refreshController?.abort())
+async function refreshHistory() {
+  if (refreshing.value) return
+  const controller = new AbortController()
+  refreshController = controller
+  refreshing.value = true
+  refreshError.value = ''
+  try {
+    await store.refreshSessions(controller.signal)
+  } catch (cause) {
+    if (!controller.signal.aborted)
+      refreshError.value = cause instanceof Error ? cause.message : '记录刷新失败，请重试'
+  } finally {
+    if (!controller.signal.aborted) refreshing.value = false
+  }
+}
+async function clearSearch() {
+  search.value = ''
+  await nextTick()
+  searchInput.value?.focus()
+}
+function navigate(event: MouseEvent) {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+  if (event.target instanceof Element && event.target.closest('a[href]')) emit('navigate')
+}
+function handleKey(event: KeyboardEvent) {
+  if (!props.mobile || !props.open) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+  }
+  if (event.key !== 'Tab') return
+  const controls = [
+    ...(navigation.value?.querySelectorAll<HTMLElement>(
+      'a[href], button:not(:disabled), input:not(:disabled)',
+    ) ?? []),
+  ].filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
+  const first = controls[0]
+  const last = controls.at(-1)
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
 const filtered = computed(() =>
   store.sessions.filter((s) =>
-    `${s.session_title} ${s.preview}`.toLowerCase().includes(search.value.toLowerCase()),
+    `${s.session_title} ${s.preview}`.toLowerCase().includes(search.value.trim().toLowerCase()),
   ),
 )
 function dateLabel(timestamp: number) {
@@ -20,9 +72,15 @@ function dateLabel(timestamp: number) {
 <template>
   <aside
     id="workspace-navigation"
+    ref="navigation"
     class="sidebar"
+    :role="mobile && open ? 'dialog' : undefined"
+    :aria-modal="mobile && open ? true : undefined"
+    aria-label="工作台导航"
+    :inert="mobile && !open"
     :class="{ 'is-open': open }"
-    @keydown.esc="$emit('close')"
+    @keydown="handleKey"
+    @click="navigate"
   >
     <div class="sidebar-heading">
       <span>我的工作台</span
@@ -50,19 +108,35 @@ function dateLabel(timestamp: number) {
         class="icon-button"
         aria-label="刷新历史会话"
         title="刷新历史会话"
-        @click="store.refreshSessions().catch(() => (store.error = '记录刷新失败，请重试'))"
+        :disabled="refreshing || store.loading"
+        :aria-busy="refreshing"
+        @click="refreshHistory"
       >
         <AppIcon name="refresh" :size="14" />
       </button>
     </div>
+    <p v-if="refreshError" class="history-error" role="alert">
+      {{ refreshError }}，可点击刷新重试。
+    </p>
     <label class="history-search"
       ><AppIcon name="search" :size="15" /><input
+        ref="searchInput"
         v-model="search"
+        name="session-search"
+        autocomplete="off"
         aria-label="搜索历史会话"
-        placeholder="搜索记录…"
-    /></label>
-    <div class="session-list">
-      <p v-if="!filtered.length" class="sidebar-empty">
+        placeholder="搜索记录…" /><button
+        v-if="search"
+        type="button"
+        class="search-clear"
+        aria-label="清除会话搜索"
+        @click="clearSearch"
+      >
+        <AppIcon name="close" :size="14" /></button
+    ></label>
+    <div class="session-list" :aria-busy="refreshing || store.loading">
+      <p v-if="refreshing || store.loading" class="sidebar-empty" role="status">正在读取会话…</p>
+      <p v-if="!filtered.length && !refreshing && !store.loading" class="sidebar-empty">
         {{ search ? '没有匹配的会话' : '提问后，会话将保存在这里' }}
       </p>
       <button
@@ -70,6 +144,8 @@ function dateLabel(timestamp: number) {
         :key="session.session_id"
         class="session-item"
         :class="{ selected: store.currentId === session.session_id }"
+        :aria-current="store.currentId === session.session_id ? 'true' : undefined"
+        :title="session.session_title"
         @click="$emit('select', session.session_id)"
       >
         <AppIcon name="chat" :size="15" /><span>{{ session.session_title }}</span

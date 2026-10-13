@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkbench } from './stores/workbench'
 import AppIcon from './components/AppIcon.vue'
@@ -10,14 +10,32 @@ const route = useRoute()
 const router = useRouter()
 const sidebarOpen = ref(false)
 const navigationButton = ref<HTMLButtonElement>()
+const content = ref<HTMLElement>()
+const narrowScreen = window.matchMedia('(max-width: 760px)')
+const mobile = ref(narrowScreen.matches)
+const navigationModal = computed(() => mobile.value && sidebarOpen.value)
+function resizeNavigation() {
+  mobile.value = narrowScreen.matches
+  if (!mobile.value) sidebarOpen.value = false
+}
+function focusContent() {
+  content.value?.focus({ preventScroll: true })
+}
 async function openNavigation() {
   sidebarOpen.value = true
   await nextTick()
-  document.querySelector<HTMLAnchorElement>('#workspace-navigation a')?.focus()
+  document.querySelector<HTMLButtonElement>('#workspace-navigation button')?.focus()
 }
-function closeNavigation() {
+async function closeNavigation() {
   sidebarOpen.value = false
+  await nextTick()
   navigationButton.value?.focus()
+}
+async function finishNavigation() {
+  if (!navigationModal.value) return
+  sidebarOpen.value = false
+  await nextTick()
+  focusContent()
 }
 watch(
   () => store.theme,
@@ -27,31 +45,41 @@ watch(
 watch(
   () => route.path,
   () => {
-    sidebarOpen.value = false
+    void finishNavigation()
   },
 )
 onMounted(() => {
   void store.initialize()
   window.addEventListener('pagehide', store.dispose)
+  narrowScreen.addEventListener('change', resizeNavigation)
 })
 onUnmounted(() => {
   window.removeEventListener('pagehide', store.dispose)
+  narrowScreen.removeEventListener('change', resizeNavigation)
   store.dispose()
 })
 function newChat() {
   store.newChat()
-  sidebarOpen.value = false
+  void finishNavigation()
   void router.push('/chat')
 }
 async function selectSession(id: string) {
-  sidebarOpen.value = false
-  await store.loadSession(id)
+  void finishNavigation()
+  const loading = store.loadSession(id)
   await router.push('/chat')
+  await loading
 }
 </script>
 <template>
   <div class="app-shell">
-    <header class="topbar">
+    <a
+      v-if="!navigationModal"
+      class="skip-link"
+      href="#workspace-content"
+      @click.prevent="focusContent"
+      >跳到主要内容</a
+    >
+    <header class="topbar" :inert="navigationModal">
       <div class="header-identity">
         <button
           ref="navigationButton"
@@ -90,15 +118,24 @@ async function selectSession(id: string) {
       v-if="sidebarOpen"
       class="sidebar-overlay"
       aria-label="关闭导航"
+      tabindex="-1"
       @click="closeNavigation"
     ></button>
     <AppSidebar
       :open="sidebarOpen"
+      :mobile="mobile"
       @new-chat="newChat"
       @select="selectSession"
       @close="closeNavigation"
+      @navigate="finishNavigation"
     />
-    <div class="app-main">
+    <div
+      id="workspace-content"
+      ref="content"
+      class="app-main"
+      tabindex="-1"
+      :inert="navigationModal"
+    >
       <div v-if="store.error" class="global-error" role="alert">
         <AppIcon name="alert" :size="17" />{{ store.error
         }}<button @click="store.initialize()">重新连接</button>

@@ -149,9 +149,9 @@ export const useWorkbench = defineStore('workbench', () => {
     selectedRun.value = ''
     if (persist) remember()
   }
-  async function refreshSessions() {
+  async function refreshSessions(signal?: AbortSignal) {
     const version = ++sessionsVersion
-    const response = await api.sessions()
+    const response = await api.sessions(signal)
     if (version !== sessionsVersion) return
     const active = sessions.value.filter(
       (s) =>

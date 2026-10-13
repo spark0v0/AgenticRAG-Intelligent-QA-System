@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ElDrawer } from 'element-plus'
+import 'element-plus/es/components/drawer/style/css'
 import { useWorkbench } from '../stores/workbench'
 import { useAutoScroll } from '../composables/useAutoScroll'
 import AppIcon from '../components/AppIcon.vue'
@@ -9,6 +11,36 @@ const ExecutionPanel = defineAsyncComponent(() => import('../components/Executio
 const store = useWorkbench()
 const scroller = ref<HTMLElement | null>(null)
 const showPanel = ref(false)
+const compactQuery = window.matchMedia('(max-width: 1000px)')
+const compact = ref(compactQuery.matches)
+let panelTrigger: HTMLElement | undefined
+function rememberTrigger() {
+  if (document.activeElement instanceof HTMLElement) panelTrigger = document.activeElement
+}
+function restorePanelFocus() {
+  if (!showPanel.value && panelTrigger?.isConnected) panelTrigger.focus({ preventScroll: true })
+}
+async function closePanel() {
+  showPanel.value = false
+  if (!compact.value) {
+    await nextTick()
+    restorePanelFocus()
+  }
+}
+function togglePanel() {
+  if (showPanel.value) void closePanel()
+  else {
+    rememberTrigger()
+    showPanel.value = true
+  }
+}
+function onLayoutChange(event: MediaQueryListEvent) {
+  showPanel.value = false
+  compact.value = event.matches
+  void nextTick(restorePanelFocus)
+}
+onMounted(() => compactQuery.addEventListener('change', onLayoutChange))
+onUnmounted(() => compactQuery.removeEventListener('change', onLayoutChange))
 const evidenceRequest = ref<{ id: string; sequence: number }>()
 const empty = computed(() => !store.current?.messages.length && !store.loadingSession)
 const contentKey = computed(
@@ -23,6 +55,8 @@ const { following, onScroll, toBottom } = useAutoScroll(
 watch(
   () => store.currentId,
   async () => {
+    showPanel.value = false
+    panelTrigger = undefined
     evidenceRequest.value = undefined
     following.value = true
     await nextTick()
@@ -51,6 +85,7 @@ const prompts = [
   },
 ]
 function inspect(runId: string, sourceId?: string) {
+  rememberTrigger()
   store.selectedRun = runId
   evidenceRequest.value = sourceId
     ? { id: sourceId, sequence: (evidenceRequest.value?.sequence ?? 0) + 1 }
@@ -75,8 +110,10 @@ function choosePrompt(text: string) {
         <button
           class="icon-button"
           :aria-label="showPanel ? '收起执行详情' : '展开执行详情'"
+          :aria-expanded="showPanel"
+          aria-controls="chat-execution-details"
           title="执行详情"
-          @click="showPanel = !showPanel"
+          @click="togglePanel"
         >
           <AppIcon name="panel" :size="18" />
         </button>
@@ -138,8 +175,25 @@ function choosePrompt(text: string) {
       </div>
       <ChatComposer v-if="!empty" />
     </section>
-    <div v-if="showPanel" class="panel-container">
-      <ExecutionPanel :evidence-request="evidenceRequest" @close="showPanel = false" />
+    <div v-if="showPanel && !compact" id="chat-execution-details" class="panel-container">
+      <ExecutionPanel :evidence-request="evidenceRequest" @close="closePanel" />
     </div>
+    <ElDrawer
+      v-if="compact"
+      v-model="showPanel"
+      title="执行详情"
+      :with-header="false"
+      size="min(420px, 100vw)"
+      class="execution-drawer"
+      append-to-body
+      destroy-on-close
+      @closed="restorePanelFocus"
+    >
+      <ExecutionPanel
+        id="chat-execution-details"
+        :evidence-request="evidenceRequest"
+        @close="closePanel"
+      />
+    </ElDrawer>
   </main>
 </template>

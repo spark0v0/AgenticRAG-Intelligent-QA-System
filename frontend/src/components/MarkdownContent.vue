@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
@@ -21,15 +21,26 @@ const md: MarkdownIt = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: true,
-  highlight: (code, language) => {
-    // Syntax highlighting is deferred until the draft stops changing.
-    const body =
-      !props.streaming && hljs.getLanguage(language)
-        ? hljs.highlight(code, { language, ignoreIllegals: true }).value
-        : md.utils.escapeHtml(code)
-    return `<pre class="code-block"><button type="button" class="code-copy" aria-label="复制代码">复制代码</button><code class="hljs">${body}</code></pre>`
-  },
 })
+md.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index]!
+  const language = token.info.trim().split(/\s+/)[0] || ''
+  const label = md.utils.escapeHtml(language || '纯文本')
+  // Keep the toolbar outside the horizontal scroller; defer highlighting while streaming.
+  const body =
+    !props.streaming && hljs.getLanguage(language)
+      ? hljs.highlight(token.content, { language, ignoreIllegals: true }).value
+      : md.utils.escapeHtml(token.content)
+  return `<div class="code-block"><div class="code-header"><span>${label}</span><button type="button" class="code-copy" aria-label="复制代码">复制代码</button></div><pre tabindex="0" aria-label="${label}代码"><code class="hljs">${body}</code></pre></div>`
+}
+const renderLink = md.renderer.rules.link_open
+md.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
+  tokens[index]!.attrSet('target', '_blank')
+  tokens[index]!.attrSet('rel', 'noopener noreferrer')
+  return renderLink
+    ? renderLink(tokens, index, options, env, renderer)
+    : renderer.renderToken(tokens, index, options)
+}
 // Only explicit backend source IDs become citations. Inline/fenced code remains untouched.
 md.inline.ruler.after('link', 'source_reference', (state, silent) => {
   if (silent) return false
@@ -52,23 +63,37 @@ const html = computed(() =>
     ADD_ATTR: ['target', 'rel'],
   }),
 )
-function handleClick(event: MouseEvent) {
+const copyTimers = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>()
+onUnmounted(() => {
+  copyTimers.forEach(clearTimeout)
+  copyTimers.clear()
+})
+async function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement
   const citation = target.closest<HTMLElement>('[data-citation]')?.dataset.citation
   if (citation && props.sources?.some((source) => source.citation_id === citation)) {
     emit('citation', citation)
     return
   }
-  const button = target.closest('.code-copy')
-  if (button) void copy(button.parentElement?.querySelector('code')?.textContent ?? '')
-  const link = target.closest('a')
-  if (link) {
-    link.target = '_blank'
-    link.rel = 'noopener noreferrer'
-  }
+  const button = target.closest<HTMLButtonElement>('.code-copy')
+  if (!button) return
+  const code = button.closest('.code-block')?.querySelector('code')?.textContent
+  if (code == null) return
+  const copied = await copy(code)
+  if (copied === undefined || !button.isConnected) return
+  // v-html owns the markup. Update only the clicked control, without re-rendering code.
+  clearTimeout(copyTimers.get(button))
+  button.textContent = copied ? '已复制' : '复制失败，请手动选择'
+  copyTimers.set(
+    button,
+    setTimeout(() => {
+      if (button.isConnected) button.textContent = '复制代码'
+      copyTimers.delete(button)
+    }, 2000),
+  )
 }
 </script>
 <template>
   <div class="markdown" @click="handleClick" v-html="html"></div>
-  <span v-if="feedback" class="copy-feedback" role="status">{{ feedback }}</span>
+  <span v-if="feedback" class="sr-only" role="status">{{ feedback }}</span>
 </template>

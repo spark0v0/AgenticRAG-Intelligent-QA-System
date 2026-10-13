@@ -15,6 +15,7 @@ import type { RunDetail, RunRecord } from '../types'
 import AppIcon from '../components/AppIcon.vue'
 import RunWaterfall from '../components/runs/RunWaterfall.vue'
 import RunNodeDetail from '../components/runs/RunNodeDetail.vue'
+import { useTabs } from '../composables/useTabs'
 const MarkdownContent = defineAsyncComponent(() => import('../components/MarkdownContent.vue'))
 const route = useRoute()
 const router = useRouter()
@@ -28,7 +29,7 @@ const error = ref('')
 const loading = ref(false)
 const run = ref<RunDetail>()
 const selectedStage = ref('')
-const tab = ref('trace')
+const { tab, panelId, tabId, onTabKeydown } = useTabs(['trace', 'sources', 'answer'])
 const mobileDetail = ref(typeof route.query.run === 'string')
 const detailRoot = ref<HTMLElement>()
 const detailLoading = ref(false)
@@ -305,15 +306,18 @@ function refresh() {
           </div>
         </div>
         <p v-if="run.error" class="inline-error">{{ run.error }}</p>
-        <div class="analysis-tabs" role="tablist" aria-label="运行分析分类">
+        <div class="analysis-tabs" role="tablist" aria-label="运行分析分类" @keydown="onTabKeydown">
           <button
             v-for="item in [
               { id: 'trace', icon: 'branch', label: '执行瀑布' },
               { id: 'sources', icon: 'book', label: '证据来源' },
               { id: 'answer', icon: 'chat', label: '最终回答' },
             ]"
+            :id="tabId(item.id)"
             :key="item.id"
             role="tab"
+            :tabindex="tab === item.id ? 0 : -1"
+            :aria-controls="panelId"
             :aria-selected="tab === item.id"
             :class="{ active: tab === item.id }"
             @click="tab = item.id"
@@ -321,7 +325,14 @@ function refresh() {
             <AppIcon :name="item.icon" :size="16" />{{ item.label }}
           </button>
         </div>
-        <div v-if="tab === 'trace'" class="analysis-content">
+        <div
+          v-if="tab === 'trace'"
+          :id="panelId"
+          class="analysis-content"
+          role="tabpanel"
+          :aria-labelledby="tabId(tab)"
+          tabindex="0"
+        >
           <RunWaterfall
             :stages="stages"
             :selected="stage?.data.stage_id"
@@ -331,7 +342,14 @@ function refresh() {
           />
           <RunNodeDetail v-if="stage" :stage="stage" :tools="stageTools" />
         </div>
-        <div v-else-if="tab === 'sources'" class="analysis-content evidence-grid">
+        <div
+          v-else-if="tab === 'sources'"
+          :id="panelId"
+          class="analysis-content evidence-grid"
+          role="tabpanel"
+          :aria-labelledby="tabId(tab)"
+          tabindex="0"
+        >
           <article
             v-for="source in sources"
             :key="source.citation_id"
@@ -356,7 +374,14 @@ function refresh() {
           </article>
           <p v-if="!sources.length" class="empty-hint">本轮未记录来源；直接回答可能不经过检索。</p>
         </div>
-        <div v-else class="analysis-content run-answer">
+        <div
+          v-else
+          :id="panelId"
+          class="analysis-content run-answer"
+          role="tabpanel"
+          :aria-labelledby="tabId(tab)"
+          tabindex="0"
+        >
           <p v-if="run.status !== 'success'" class="notice">本轮未完成，以下为已保存的草稿。</p>
           <MarkdownContent
             v-if="run.result?.answer"

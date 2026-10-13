@@ -7,9 +7,12 @@ import { useWorkbench } from '../stores/workbench'
 import type { ImageAttachment } from '../types'
 import AppIcon from './AppIcon.vue'
 import { useKnowledge } from '../stores/knowledge'
+import { useTextareaSize } from '../composables/useTextareaSize'
 
 const store = useWorkbench()
 const knowledge = useKnowledge()
+const textarea = ref<HTMLTextAreaElement | null>(null)
+useTextareaSize(textarea, () => store.current?.draft ?? '')
 const knowledgeError = ref('')
 const knowledgeController = new AbortController()
 onMounted(() => {
@@ -193,6 +196,7 @@ function handleKey(event: KeyboardEvent) {
       </div>
       <textarea
         v-if="store.current"
+        ref="textarea"
         v-model="store.current.draft"
         aria-label="输入问题"
         placeholder="问点什么，或围绕你的资料展开提问…"
@@ -205,8 +209,11 @@ function handleKey(event: KeyboardEvent) {
         <div class="composer-options">
           <input
             ref="fileInput"
-            class="sr-only"
+            hidden
             type="file"
+            :disabled="
+              store.busy || fileBusy || store.loadingSession || !store.profile?.supports_vision
+            "
             accept="image/png,image/jpeg,image/webp,image/gif"
             multiple
             aria-label="上传图片"
@@ -214,7 +221,9 @@ function handleKey(event: KeyboardEvent) {
           />
           <button
             class="icon-button"
-            :disabled="store.busy || fileBusy || !store.profile?.supports_vision"
+            :disabled="
+              store.busy || fileBusy || store.loadingSession || !store.profile?.supports_vision
+            "
             :title="
               store.profile?.supports_vision ? '添加图片（每张最多 4MB）' : '所选模型不支持图片'
             "

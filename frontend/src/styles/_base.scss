@@ -73,6 +73,20 @@ p {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
 }
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 16px;
+  z-index: 100;
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  transform: translateY(-150%);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
 .search-field input {
   border: 0;
   outline: 0;

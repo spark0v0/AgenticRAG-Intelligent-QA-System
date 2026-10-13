@@ -5,11 +5,12 @@ import { useWorkbench } from '../stores/workbench'
 import type { StageEvent, ToolEvent } from '../types'
 import AppIcon from './AppIcon.vue'
 import { sourceLabel } from '../composables/useRunAnalysis'
+import { useTabs } from '../composables/useTabs'
 defineEmits<{ close: [] }>()
 const props = defineProps<{ evidenceRequest?: { id: string; sequence: number } }>()
 const panel = ref<HTMLElement>()
 const store = useWorkbench()
-const tab = ref('trace')
+const { tab, panelId, tabId, onTabKeydown } = useTabs(['trace', 'sources', 'tools'])
 watch(
   () => props.evidenceRequest,
   async (request) => {
@@ -56,6 +57,13 @@ const tools = computed(() => {
   return [...map.values()]
 })
 const result = computed(() => store.selectedMessage?.result)
+const question = computed(
+  () =>
+    store.selectedMessage?.run_id &&
+    store.current?.messages.find(
+      (message) => message.role === 'user' && message.run_id === store.selectedMessage?.run_id,
+    )?.content,
+)
 const stopLabels: Record<string, string> = {
   sufficient_evidence: '达到检索阈值',
   tools_unavailable: '工具不可用，停止重复调用',
@@ -97,7 +105,12 @@ function format(value: unknown) {
 }
 </script>
 <template>
-  <aside ref="panel" class="execution-panel">
+  <aside
+    ref="panel"
+    class="execution-panel"
+    aria-label="本轮执行详情"
+    @keydown.esc.stop="$emit('close')"
+  >
     <div class="panel-heading">
       <div><AppIcon name="pulse" :size="18" /><strong>执行详情</strong></div>
       <button
@@ -106,7 +119,7 @@ function format(value: unknown) {
         title="收起执行详情"
         @click="$emit('close')"
       >
-        <AppIcon name="panel" :size="17" />
+        <AppIcon name="close" :size="17" />
       </button>
     </div>
     <template v-if="!store.selectedMessage">
@@ -114,6 +127,7 @@ function format(value: unknown) {
     </template>
     <template v-else>
       <div class="run-summary">
+        <p v-if="question" class="run-summary-question" :title="question">{{ question }}</p>
         <RouterLink
           v-if="store.selectedMessage.run_id"
           class="run-open"
@@ -137,15 +151,18 @@ function format(value: unknown) {
           store.selectedMessage.run_id.slice(0, 8)
         }}</small>
       </div>
-      <div class="detail-tabs" role="tablist" aria-label="执行详情分类">
+      <div class="detail-tabs" role="tablist" aria-label="执行详情分类" @keydown="onTabKeydown">
         <button
           v-for="item in [
             { id: 'trace', label: '执行过程', count: stages.length },
             { id: 'sources', label: '来源', count: sources.length },
             { id: 'tools', label: '工具', count: tools.length },
           ]"
+          :id="tabId(item.id)"
           :key="item.id"
           role="tab"
+          :tabindex="tab === item.id ? 0 : -1"
+          :aria-controls="panelId"
           :aria-selected="tab === item.id"
           :class="{ active: tab === item.id }"
           @click="tab = item.id"
@@ -153,7 +170,13 @@ function format(value: unknown) {
           {{ item.label }}<span>{{ item.count }}</span>
         </button>
       </div>
-      <div class="detail-content">
+      <div
+        :id="panelId"
+        class="detail-content"
+        role="tabpanel"
+        :aria-labelledby="tabId(tab)"
+        tabindex="0"
+      >
         <details v-if="result?.retrieval_plan" class="raw-details">
           <summary>检索决策与停止原因</summary>
           <p>查询：{{ result.retrieval_plan.query_variants.join(' → ') }}</p>

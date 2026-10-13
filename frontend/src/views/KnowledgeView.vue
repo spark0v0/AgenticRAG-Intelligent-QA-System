@@ -27,10 +27,11 @@ const { documents, loading, error: documentError, refresh } = useKnowledgeDocume
 const current = computed(() => store.libraries.find((item) => item.id === selected.value))
 const search = ref('')
 const filter = ref('all')
+const hasFilters = computed(() => !!search.value.trim() || filter.value !== 'all')
 const filtered = computed(() =>
   documents.value.filter(
     (doc) =>
-      doc.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase()) &&
+      doc.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()) &&
       (filter.value === 'all' ||
         (filter.value === 'completed'
           ? isSearchable(doc)
@@ -46,6 +47,9 @@ const createButton = ref<HTMLButtonElement>()
 const error = ref('')
 const feedback = ref('')
 const creating = ref(false)
+const createError = ref('')
+const createErrorElement = ref<HTMLElement>()
+const nameInput = ref<HTMLInputElement>()
 const name = ref('')
 const mode = ref<KnowledgeMode>('hybrid')
 const probe = ref('')
@@ -58,6 +62,15 @@ let probeController: AbortController | undefined
 let disposed = false
 let libraryTimer: ReturnType<typeof setTimeout> | undefined
 const signal = controller.signal
+function focusCreateName() {
+  const input = nameInput.value
+  const dialog = input?.closest('[role="dialog"]')
+  const active = document.activeElement
+  // A user may already be editing or opening the select while the entrance animation runs.
+  if (!creating.value || busy.value || !input || (active !== dialog && dialog?.contains(active)))
+    return
+  input.focus({ preventScroll: true })
+}
 watch(selected, () => {
   probeController?.abort()
   hits.value = []
@@ -111,17 +124,36 @@ async function action(fn: () => Promise<void>, target = current.value) {
     }
   }
 }
-function create() {
-  return action(async () => {
+async function create() {
+  if (busy.value || disposed || !name.value.trim()) return
+  busy.value = true
+  createError.value = ''
+  try {
     const item = await knowledgeApi.create(name.value.trim(), mode.value, signal)
-    await load()
     if (disposed) return
+    // The POST response confirms creation. A later list refresh must never invite a duplicate POST.
+    store.libraries = [item, ...store.libraries.filter((library) => library.id !== item.id)]
     selected.value = item.id
     operation.value = { id: item.id, label: item.name }
     creating.value = false
     name.value = ''
+    error.value = ''
     feedback.value = '知识库已创建，现在可以上传资料。'
-  })
+  } catch (cause) {
+    if (!disposed) {
+      createError.value = cause instanceof Error ? cause.message : '创建失败，请重试'
+      await nextTick()
+      createErrorElement.value?.focus()
+    }
+  } finally {
+    busy.value = false
+  }
+}
+async function clearFilters() {
+  search.value = ''
+  filter.value = 'all'
+  await nextTick()
+  searchInput.value?.focus()
 }
 function rename() {
   const item = current.value
@@ -339,7 +371,13 @@ onBeforeUnmount(() => {
               value="splitting" /><ElOption label="索引失败" value="failed" /><ElOption
               label="已取消"
               value="cancelled" /><ElOption label="清理失败" value="delete_failed" /></ElSelect
-          ><button aria-label="刷新文档列表" @click="refresh()">
+          ><button
+            aria-label="刷新文档列表"
+            title="刷新文档列表"
+            :disabled="loading"
+            :aria-busy="loading"
+            @click="refresh()"
+          >
             <AppIcon name="refresh" :size="17" />
           </button>
         </div>
@@ -348,21 +386,22 @@ onBeforeUnmount(() => {
         </p>
         <p v-if="loading" role="status" class="muted">正在读取文档…</p>
         <DocumentTable
-          v-else-if="filtered.length"
+          v-if="filtered.length"
           :documents="filtered"
           :busy="busy"
           @action="documentAction"
         />
-        <div v-else class="kb-empty">
+        <div v-else-if="!loading && !documentError" class="kb-empty">
           <AppIcon name="book" :size="30" />
-          <h3>{{ documents.length ? '没有匹配的文档' : '从第一份资料开始' }}</h3>
+          <h3>{{ hasFilters ? '没有匹配的文档' : '从第一份资料开始' }}</h3>
           <p>
             {{
-              documents.length
+              hasFilters
                 ? '尝试其他关键词或状态。'
                 : '上传后可查看索引状态，并在提问时选择此知识库。'
             }}
           </p>
+          <button v-if="hasFilters" class="kb-primary" @click="clearFilters">清除筛选</button>
         </div>
         <details class="kb-probe">
           <summary>检索预览 <span>直接查看命中片段，不调用回答模型</span></summary>
@@ -395,6 +434,12 @@ onBeforeUnmount(() => {
           </article>
         </details>
       </section>
+      <section v-else-if="busy || error" class="kb-empty kb-first" role="status">
+        <h2>{{ busy ? '正在读取知识库…' : '知识库暂时不可用' }}</h2>
+        <p>
+          {{ busy ? '请稍候，正在获取资料列表。' : '请点击上方重新加载，已有资料不会因此丢失。' }}
+        </p>
+      </section>
       <section v-else class="kb-empty kb-first">
         <AppIcon name="book" :size="42" />
         <h2>让资料成为可追溯的答案</h2>
@@ -409,18 +454,28 @@ onBeforeUnmount(() => {
       title="创建知识库"
       width="min(500px, 94vw)"
       :close-on-click-modal="!busy"
+      :close-on-press-escape="!busy"
+      :show-close="!busy"
+      @open="createError = ''"
+      @opened="focusCreateName"
     >
       <form id="kb-create" class="kb-create" @submit.prevent="create">
+        <p v-if="createError" ref="createErrorElement" class="kb-error" role="alert" tabindex="-1">
+          {{ createError }}
+        </p>
         <label for="kb-name">知识库名称</label
         ><input
           id="kb-name"
+          ref="nameInput"
           v-model="name"
+          name="knowledge-name"
+          autocomplete="off"
+          :readonly="busy"
           required
           maxlength="80"
           placeholder="例如：产品手册、技术文档"
-          autofocus
         /><label for="kb-mode">检索方式</label
-        ><ElSelect id="kb-mode" v-model="mode" aria-label="检索方式"
+        ><ElSelect id="kb-mode" v-model="mode" :disabled="busy" aria-label="检索方式"
           ><ElOption label="中文语义 + 关键词融合" value="hybrid" /><ElOption
             label="仅关键词（无需模型）"
             value="keyword"
@@ -435,7 +490,7 @@ onBeforeUnmount(() => {
       </form>
       <template #footer
         ><button :disabled="busy" @click="creating = false">取消</button
-        ><button class="kb-primary" form="kb-create" :disabled="busy || !name.trim()">
+        ><button class="kb-primary" type="submit" form="kb-create" :disabled="busy || !name.trim()">
           {{ busy ? '创建中…' : '创建知识库' }}
         </button></template
       >

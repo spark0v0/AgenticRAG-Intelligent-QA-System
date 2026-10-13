@@ -173,15 +173,53 @@
     monospace;
 }
 .markdown .code-block {
-  position: relative;
-  padding-top: 45px;
+  margin: 16px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 12px 4px 15px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.code-header > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .code-copy {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  font-size: 13px;
-  color: var(--muted);
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.code-copy:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.markdown .code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overscroll-behavior-x: contain;
+}
+.markdown .code-block pre:focus-visible {
+  outline-offset: -2px;
+}
+.markdown .code-block .hljs {
+  display: block;
+  padding: 0;
+  overflow: visible;
 }
 .markdown .hljs {
   background: transparent;
@@ -315,6 +353,19 @@
   display: block;
   font-size: 18px;
   margin-bottom: 12px;
+}
+.run-summary-question {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
 }
 .run-summary > div {
   display: flex;
@@ -843,14 +894,14 @@
     padding-inline: 28px;
   }
 }
-@media (max-width: 1000px) {
-  .panel-container {
-    position: absolute;
-    inset: 0 0 0 auto;
-    width: min(390px, 100%);
-    z-index: 5;
-    box-shadow: -8px 0 28px rgb(0 0 0 / 10%);
-  }
+.execution-drawer .el-drawer__body {
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.execution-drawer .detail-content {
+  overscroll-behavior: contain;
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
 }
 @media (max-width: 760px) {
   .conversation-heading {
