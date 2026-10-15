@@ -169,7 +169,7 @@ test('long history fixture: restore, scroll and type without automatic submissio
     })
     observer.observe(document, { childList: true, subtree: true })
   })
-  await page.route('**/api/sessions', (route) =>
+  await page.route('**/api/sessions?*', (route) =>
     route.fulfill({
       json: {
         items: [

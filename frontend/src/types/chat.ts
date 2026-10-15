@@ -12,6 +12,7 @@ export interface Conversation {
   events: ExecutionEvent[]
   status: RunStatus
   activeRun?: string
+  cancelling?: boolean
   draft: string
   images: ImageAttachment[]
   error?: string

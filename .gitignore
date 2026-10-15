@@ -42,3 +42,6 @@ frontend/playwright-report/
 .env.backup*
 secrets/
 credentials/
+
+# Copied from the pinned PDF.js package by predev/prebuild
+frontend/public/pdfjs/

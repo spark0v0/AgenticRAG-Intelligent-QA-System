@@ -5,6 +5,9 @@ import type {
   KnowledgeDocument,
   KnowledgeLibrary,
   KnowledgeMode,
+  RetrievalMode,
+  RetrievalResult,
+  RetrievalComparison,
   UploadLimits,
 } from '../types/knowledge'
 import type { Source } from '../types'
@@ -79,23 +82,18 @@ export const knowledgeApi = {
     ),
   original: (source: Source) =>
     `/api${base(source.knowledge_base_id!)}/documents/${encodeURIComponent(source.document_id!)}/original`,
-  search: (
-    id: string,
-    query: string,
-    mode: 'keyword' | 'semantic' | 'hybrid',
-    signal?: AbortSignal,
-  ) =>
-    requestJson<{
-      documents: {
-        content: string
-        source: string
-        metadata: Omit<Source, 'citation_id' | 'source'>
-      }[]
-      metadata: { state: string; mode: string }
-    }>(`${base(id)}/search`, {
+  search: (id: string, query: string, mode: RetrievalMode, signal?: AbortSignal) =>
+    requestJson<RetrievalResult>(`${base(id)}/search`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ query, mode }),
+      signal,
+    }),
+  compare: (id: string, query: string, signal?: AbortSignal) =>
+    requestJson<RetrievalComparison>(`${base(id)}/compare`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query }),
       signal,
     }),
 }

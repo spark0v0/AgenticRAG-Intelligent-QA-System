@@ -10,13 +10,15 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from core.rag_system import AgenticRAGSystem
 from utils.config import Config
 from utils.execution import public_data
+from api.providers import local_management
+from api.contracts import SessionList, SessionSummary, SessionUpdate, DeletionResult
 
 ROOT = Path(__file__).resolve().parents[2]
 router = APIRouter()
@@ -216,14 +218,37 @@ async def tools(request: Request, mode: Mode = "live"):
     return {"items": public_data(get_system(mode).list_tools())}
 
 
-@router.get("/sessions")
-async def sessions(mode: Mode = "live"):
-    return {"items": public_data(get_system(mode).list_sessions())}
+@router.get("/sessions", response_model=SessionList)
+async def sessions(mode: Mode = "live", search: str = Query(default='', max_length=200),
+                   offset: int = Query(default=0, ge=0), limit: int | None = Query(default=None, ge=1, le=100)):
+    return public_data(await asyncio.to_thread(get_system(mode).memory.search_sessions, search, offset, limit))
+
+
+@router.patch('/sessions/{session_id}', response_model=SessionSummary, dependencies=[Depends(local_management)])
+async def update_session(session_id: str, body: SessionUpdate, mode: Mode = 'live'):
+    try:
+        return public_data(await asyncio.to_thread(get_system(mode).memory.update_session, session_id, body.title, body.pinned))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.delete('/sessions/{session_id}', response_model=DeletionResult, dependencies=[Depends(local_management)])
+async def delete_session(session_id: str, mode: Mode = 'live'):
+    try:
+        await asyncio.to_thread(get_system(mode).memory.delete_session, session_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {'status': 'deleted'}
 
 
 @router.get("/sessions/{session_id}")
 async def session(session_id: str, mode: Mode = "live"):
-    return public_data(get_system(mode).get_session_detail(session_id))
+    system = get_system(mode)
+    if not await asyncio.to_thread(system.memory.session_summary, session_id):
+        raise HTTPException(404, '会话不存在或已删除')
+    return public_data(await asyncio.to_thread(system.get_session_detail, session_id))
 
 
 @router.get("/visualization/{session_id}")

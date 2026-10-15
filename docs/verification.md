@@ -5,6 +5,7 @@
 在项目根目录运行：
 
 ```powershell
+npm --prefix frontend run api:check
 npm --prefix frontend run lint
 npm --prefix frontend run format:check
 npm --prefix frontend run smoke
@@ -150,3 +151,29 @@ Remove-Item Env:WORKBENCH_VITE
 - 从项目外的工作目录运行 `start.bat -Port 8001 -NoBrowser`，完成 vue-tsc / Vite 构建，随后 `/chat` 返回 HTTP 200。再次运行正确识别已有页面，没有创建第二个服务；另用隔离 TCP 监听器确认端口冲突会报错，不结束占用进程。
 - PowerShell 语法解析、ESLint、Prettier 和既有 Vitest 15 项通过。此前同一批界面改动的 10 条浏览器流程结果见上节，启动器不改变业务接口。
 - `NoBrowser` 用于自动化检查，未自动安装缺失依赖或下载模型；首次安装步骤仍见 README。启动后的浏览器打开依赖 Windows 默认浏览器关联。
+
+## 2026-10-14 会话与阅读交互检查
+
+环境：Windows，项目自身 Python 环境，Node 24，本机 Edge（通过 `PLAYWRIGHT_CHANNEL=msedge`）。浏览器服务使用临时 SQLite、知识库目录与供应商夹具，不读取用户历史，不调用真实模型或 Tavily。
+
+- `npm run lint`、`format:check`、`api:check`、`build`（包含 vue-tsc）：通过。
+- Vitest：19 项通过，包含运行切换时返回会话、只读轮询恢复、立即停止接收/等待取消确认和文本草稿隔离。
+- `pytest tests/test_workbench_smoke.py tests/test_session_management.py`：8 项通过。系统默认 pytest 临时目录不可访问，改用新建的 `.cache/pytest-session-<随机标识>`。
+- 生产静态页面：10 项 Playwright 检查通过；Vite 代理：2 项通过。新增覆盖草稿刷新、重命名/置顶、Markdown 下载、会话删除、知识库筛选 URL 恢复、双页 PDF 读取/翻页/缩放/引用页及 390px 窄屏。
+- PDF 首次检查发现 Windows `.mjs` 响应为 text/plain，已显式注册 JavaScript MIME；浏览器检查同时验证 Worker 响应类型。
+- 视觉复核：桌面 1440px 与窄屏 390px，截图位于被 Git 忽略的 `frontend/test-results/evidence/reader-desktop.png`、`reader-mobile.png`。
+- SQLite 隔离夹具：10 个会话的列表读取由原存储层 31 次 SELECT 改为 2 次（count + 摘要分页）；这是查询数量对比，不代表端到端耗时提升比例。
+- 当前生产构建中 PDF 阅读模块约 433 kB（gzip 131 kB），Worker 约 1.26 MB，均在展开阅读器时加载；CMap/字体/WASM 随构建提供，按需请求。
+
+边界：没有新增或执行真实供应商/付费搜索联调；PDF 使用隔离的文本型双页文档，未覆盖所有字体、加密和异常 PDF。单个超长会话仍整体恢复消息与轨迹；接口类型生成目前覆盖会话管理模块，SSE 和其他接口保持现有类型与校验。CI 配置已更新，本轮未推送，因此没有新的远程 CI 结果。
+
+## 2026-10-15 检索对比检查
+
+新增知识库三路检索对比，复用原有正式检索实现，不新增模型、重排器或依赖。沿用隔离数据库与本机 Edge，未读取用户文件或发起付费请求。
+
+- `npm run typecheck`、`lint`、`format:check`、`build`：通过。既有 Vitest 19 项通过。
+- `pytest tests/test_knowledge_smoke.py`：7 项通过，临时目录为新建的 `.cache/pytest-compare-<随机标识>`。新增检查覆盖一次查询嵌入、三路排序与正式 search 一致、原始分数/RRF 计算、跨库隔离、删除后排除、模型失败时保留关键词、空库/索引中/取消后未就绪状态，以及空白输入拒绝。
+- 浏览器检查使用真实 FastAPI/SQLite/关键词索引，验证三列状态、原文证据、切库后的晚到响应丢弃、停止等待与焦点返回、立即重新检索，以及 390px 无页面级横向溢出；原知识库上传→问答→引用→删除快照流程、PDF 证据阅读仍通过。
+- 桌面与窄屏截图在 Git 忽略的 `frontend/test-results/evidence/retrieval-desktop.png`、`retrieval-mobile.png`，截图中仅关键词库的语义/融合明确标注未启用。
+
+验证边界：语义排序检查使用固定向量夹具和实际 Chroma，验证执行链与排序契约，不评价真实 BGE 的语义召回质量。界面耗时来自服务端实际记录，因共用候选与嵌入，不作为独立模式速度比较。取消只停止浏览器等待，本地检索线程可能继续完成。没有新的远程 CI 结果。

@@ -239,6 +239,32 @@
   color: var(--accent);
   background: var(--accent-soft);
 }
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  .session-item {
+    flex: 1;
+    min-width: 0;
+  }
+  .session-actions {
+    width: 28px;
+    height: 32px;
+    color: var(--muted);
+  }
+}
+.history-feedback {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 8px;
+  line-height: 1.6;
+}
+.history-more {
+  width: 100%;
+  padding: 10px;
+  color: var(--accent);
+  font-size: 12px;
+}
 .sidebar-bottom {
   margin-top: 12px;
   border-top: 1px solid var(--line);

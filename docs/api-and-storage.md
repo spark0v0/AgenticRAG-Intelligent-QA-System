@@ -120,3 +120,17 @@ FastAPI 同源提供 SPA 与 API，无需跨域白名单。构建后启动服务
 ## 知识库接口与存储
 
 文档上传、索引作业、检索预览、原文访问与索引重建见 [知识库文档](knowledge-workbench.md)。知识库请求携带 `knowledge_base_id`，来源包含文档、片段、版本和实际位置，历史结果保存当时的证据快照。
+
+## 会话管理与摘要迁移
+
+- `GET /api/sessions?search=&offset=0&limit=30` 返回 `items/total`，按置顶、更新时间排序。省略 limit 时保留旧的全列表语义；每项仅包含会话摘要，不加载回答/附件/轨迹。
+- `PATCH /api/sessions/{id}`：可提交 `title`（1–80 字符）、`pinned`，返回更新后的摘要。
+- `DELETE /api/sessions/{id}`：事务删除会话的消息、运行、事件与摘要；活动运行返回 409。不会删除知识库文档，已删除 ID 再删保持幂等。
+- 两个写入接口沿用本机管理约束，带 `X-Workbench-Request: 1`。未知会话详情返回 404。
+- 新增 `session_summaries` 表以及 `session-summary-v1` 迁移标记。首次启动在事务中从原 turns/runs 回填摘要与旧消息，此后不再每次启动扫描并覆盖全部消息。原 JSON、SQLite 消息和附件保留。备份时在停止服务后备份原数据库；无清库或手动重新导入步骤。
+- 摘要随运行开始和成功保存更新；分页列表固定一次 count 和一次摘要查询。模型上下文使用 SQL LIMIT 获取最近轮次。单个会话的完整消息与轨迹仍整体读取，超长单会话分页属于后续优化。
+- OpenAPI 统一展示 `/api` 路径，旧无前缀地址仍可调用。`npm --prefix frontend run api:generate` 生成会话接口类型；`api:check` 验证生成结果与后端一致。生成过程不启动生命周期、不调用模型，也不导出运行数据。
+
+## PDF 原文资源
+
+`/api/knowledge/{kb}/documents/{doc}/original` 继续提供原文件；PDF.js Worker 从 `/assets` 加载，CMap/字体/WASM 从 `/pdfjs` 加载。FastAPI 显式指定 `.mjs` 为 JavaScript、`.wasm` 为 WebAssembly，避免 Windows 文件关联导致模块加载失败。生产发布需保留完整 `frontend/dist`，更新后端或新增静态挂载后重启服务。

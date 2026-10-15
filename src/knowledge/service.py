@@ -313,12 +313,25 @@ class KnowledgeService:
         mode = mode or kb['mode']
         if mode not in {'keyword', 'semantic', 'hybrid'} or (mode != 'keyword' and kb['mode'] == 'keyword'):
             raise ValueError('此知识库只有关键词索引；语义模式须在创建知识库时启用')
+        rows, state = self._search_snapshot(kb_id)
+        if not rows:
+            return self._search_result(kb_id, mode, [], state, 0)
+        lexical, _ = self._keyword_ranking(rows, query)
+        vector_order, _ = self._semantic_ranking(kb_id, rows, query) if mode != 'keyword' else ([], {})
+        ranks = [lexical] if mode == 'keyword' else [vector_order] if mode == 'semantic' else [lexical, vector_order]
+        output = self._ranked_documents(kb_id, rows, ranks, mode, limit)
+        return self._search_result(kb_id, mode, output, 'ready' if output else 'no_match', len(rows))
+
+    def _search_snapshot(self, kb_id):
+        """Read one committed candidate set shared by all comparison modes."""
         with self.db() as db:
             docs = db.execute('SELECT * FROM documents WHERE kb_id=? AND deleted=0', (kb_id,)).fetchall()
-            rows = [dict(r) for r in db.execute("SELECT c.*,d.name,d.version FROM chunks c JOIN documents d ON c.doc_id=d.id WHERE c.kb_id=? AND d.deleted=0 AND d.status='completed' AND d.fingerprint=?", (kb_id, self.fingerprint(kb_id)))]
+            rows = [dict(r) for r in db.execute("SELECT c.*,d.name,d.version FROM chunks c JOIN documents d ON c.doc_id=d.id WHERE c.kb_id=? AND d.deleted=0 AND d.status='completed' AND d.fingerprint=? ORDER BY c.id", (kb_id, self.fingerprint(kb_id)))]
         state = 'ready' if rows else ('empty' if not docs else 'indexing' if any(d['status'] in ACTIVE for d in docs) else 'not_ready')
-        if not rows:
-            return {'documents': [], 'metadata': {'state': state, 'knowledge_base_id': kb_id, 'mode': mode}}
+        return rows, state
+
+    @staticmethod
+    def _keyword_ranking(rows, query):
         counts = [Counter(tokenize(row['content'])) for row in rows]
         terms = set(tokenize(query))
         lengths = [sum(c.values()) for c in counts]
@@ -327,20 +340,25 @@ class KnowledgeService:
         scores = [sum(math.log(1 + (len(rows) - df[t] + .5) / (df[t] + .5)) * c[t] * 2.2 /
                       (c[t] + 1.2 * (.25 + .75 * lengths[i] / average)) for t in terms if c[t]) for i, c in enumerate(counts)]
         lexical = sorted((i for i in range(len(rows)) if scores[i] > 0), key=lambda i: scores[i], reverse=True)
-        vector_order = []
-        if mode != 'keyword':
-            embedding = self.embed.encode([query], query=True)[0]
-            # Query exactly committed IDs: staged, deleted and foreign documents cannot enter the candidate pool.
-            generations = list({row['generation'] for row in rows})
-            by_chunk = {row['id']: index for index, row in enumerate(rows)}
-            result = self._collection().query(query_embeddings=[embedding], n_results=min(50, len(rows)),
-                where={'$and': [{'kb_id': kb_id}, {'generation': {'$in': generations}}]},
-                include=['metadatas', 'distances'])
-            for metadata, distance in zip(result['metadatas'][0], result['distances'][0]):
-                index = by_chunk.get(metadata['chunk_id'])
-                if index is not None and 1 - distance >= .35:
-                    vector_order.append(index)
-        ranks = [lexical] if mode == 'keyword' else [vector_order] if mode == 'semantic' else [lexical, vector_order]
+        return lexical, scores
+
+    def _semantic_ranking(self, kb_id, rows, query):
+        embedding = self.embed.encode([query], query=True)[0]
+        # Staged, deleted and foreign documents cannot enter the candidate pool.
+        generations = list({row['generation'] for row in rows})
+        by_chunk = {row['id']: index for index, row in enumerate(rows)}
+        result = self._collection().query(query_embeddings=[embedding], n_results=min(50, len(rows)),
+            where={'$and': [{'kb_id': kb_id}, {'generation': {'$in': generations}}]},
+            include=['metadatas', 'distances'])
+        similarities = {}
+        for metadata, distance in zip(result['metadatas'][0], result['distances'][0]):
+            index = by_chunk.get(metadata['chunk_id'])
+            if index is not None and 1 - distance >= .35:
+                similarities[index] = 1 - distance
+        return list(similarities), similarities
+
+    @staticmethod
+    def _ranked_documents(kb_id, rows, ranks, mode, limit):
         fusion = Counter()
         for ranking in ranks:
             for rank, index in enumerate(ranking[:50]):
@@ -354,7 +372,69 @@ class KnowledgeService:
                              'document_name': row['name'], 'original_available': True, 'retrieval_mode': mode,
                              'embedding_model': MODEL if mode != 'keyword' else None,
                              'embedding_dimension': DIMENSION if mode != 'keyword' else None, 'splitter': SPLITTER}})
-        return {'documents': output, 'metadata': {'state': 'ready' if output else 'no_match', 'knowledge_base_id': kb_id, 'mode': mode, 'candidate_count': len(rows)}}
+        return output
+
+    @staticmethod
+    def _search_result(kb_id, mode, documents, state, count, reason=None):
+        metadata = {'state': state, 'knowledge_base_id': kb_id, 'mode': mode, 'candidate_count': count}
+        if reason:
+            metadata['reason'] = reason
+        return {'documents': documents, 'metadata': metadata}
+
+    def compare(self, kb_id, query, limit=6):
+        """Diagnostic retrieval only: one snapshot and at most one query embedding, no LLM."""
+        start = time.perf_counter()
+        kb = self.library(kb_id)
+        if kb['deleting']:
+            raise LookupError('知识库正在删除，不再参与检索')
+        rows, state = self._search_snapshot(kb_id)
+        timings = {'snapshot_ms': (time.perf_counter() - start) * 1000,
+                   'keyword_ms': None, 'semantic_ms': None, 'fusion_ms': None}
+        lexical, scores, vector, similarities = [], [], [], {}
+        semantic_error = None
+        if rows:
+            stage = time.perf_counter()
+            lexical, scores = self._keyword_ranking(rows, query)
+            timings['keyword_ms'] = (time.perf_counter() - stage) * 1000
+            if kb['mode'] == 'hybrid':
+                stage = time.perf_counter()
+                try:
+                    vector, similarities = self._semantic_ranking(kb_id, rows, query)
+                except Exception:
+                    # Never send provider errors, storage paths or private configuration to the UI.
+                    semantic_error = '语义检索不可用，请检查本地嵌入模型与向量索引；关键词结果仍可查看。'
+                timings['semantic_ms'] = (time.perf_counter() - stage) * 1000
+        lexical_positions = {index: rank for rank, index in enumerate(lexical[:50], 1)}
+        vector_positions = {index: rank for rank, index in enumerate(vector[:50], 1)}
+        by_chunk = {row['id']: index for index, row in enumerate(rows)}
+        results = []
+        for mode, ranks in [('keyword', [lexical]), ('semantic', [vector]), ('hybrid', [lexical, vector])]:
+            if mode != 'keyword' and kb['mode'] == 'keyword':
+                results.append(self._search_result(kb_id, mode, [], 'unavailable', len(rows),
+                    '此知识库仅建立了关键词索引；语义与融合对比需要使用混合检索知识库。'))
+                continue
+            if mode != 'keyword' and semantic_error:
+                results.append(self._search_result(kb_id, mode, [], 'error', len(rows), semantic_error))
+                continue
+            stage = time.perf_counter()
+            output = self._ranked_documents(kb_id, rows, ranks, mode, limit)
+            if mode == 'hybrid' and rows:
+                timings['fusion_ms'] = (time.perf_counter() - stage) * 1000
+            for doc in output:
+                index = by_chunk[doc['metadata']['chunk_id']]
+                keyword_rank, semantic_rank = lexical_positions.get(index), vector_positions.get(index)
+                doc['ranking'] = {
+                    'keyword_rank': keyword_rank, 'semantic_rank': semantic_rank,
+                    'bm25_score': round(scores[index], 6) if keyword_rank else None,
+                    'cosine_similarity': round(similarities[index], 6) if semantic_rank else None,
+                    'rrf_score': sum(1 / (60 + rank) for rank in [keyword_rank, semantic_rank] if rank),
+                }
+            results.append(self._search_result(kb_id, mode, output,
+                ('ready' if output else 'no_match') if rows else state, len(rows)))
+        timings['total_ms'] = (time.perf_counter() - start) * 1000
+        return {'knowledge_base_id': kb_id, 'query': query, 'candidate_count': len(rows), 'limit': limit,
+                'timings': {name: round(value, 3) if value is not None else None for name, value in timings.items()},
+                'results': results}
 
     def evidence(self, kb_id, doc_id, chunk_id):
         doc = self.document(kb_id, doc_id, True)

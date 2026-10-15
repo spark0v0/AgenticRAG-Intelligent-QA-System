@@ -1,3 +1,4 @@
+import type { components } from '../types/api.generated'
 import type { QueryRequest, RunRecord, SessionDetail, SessionSummary, SystemStatus } from '../types'
 
 export interface FieldIssue {
@@ -83,14 +84,37 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
 
 export const api = {
   status: () => requestJson<SystemStatus>('/status'),
-  sessions: (signal?: AbortSignal) =>
-    requestJson<{ items: SessionSummary[] }>('/sessions', { signal }),
+  sessions: (
+    signal?: AbortSignal,
+    options: { search?: string; offset?: number; limit?: number } = {},
+  ) =>
+    requestJson<components['schemas']['SessionList']>(
+      `/sessions?${new URLSearchParams({ search: options.search || '', offset: String(options.offset || 0), limit: String(options.limit || 30) })}`,
+      { signal },
+    ),
+  updateSession: (
+    id: string,
+    changes: components['schemas']['SessionUpdate'],
+    signal?: AbortSignal,
+  ) =>
+    requestJson<SessionSummary>(`/sessions/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Workbench-Request': '1' },
+      body: JSON.stringify(changes),
+      signal,
+    }),
+  deleteSession: (id: string, signal?: AbortSignal) =>
+    requestJson<components['schemas']['DeletionResult']>(`/sessions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'X-Workbench-Request': '1' },
+      signal,
+    }),
   session: (id: string, signal?: AbortSignal) =>
     requestJson<SessionDetail>(`/sessions/${encodeURIComponent(id)}`, { signal }),
-  cancel: (id: string) =>
+  cancel: (id: string, signal?: AbortSignal) =>
     requestJson<{ cancelled: boolean; run?: Pick<RunRecord, 'status' | 'result' | 'error'> }>(
       `/runs/${encodeURIComponent(id)}/cancel`,
-      { method: 'POST' },
+      { method: 'POST', signal },
     ),
   stream: (payload: QueryRequest, signal: AbortSignal) =>
     fetch('/api/query/stream', {

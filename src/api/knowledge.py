@@ -30,6 +30,13 @@ class SearchInput(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     mode: Literal['keyword', 'semantic', 'hybrid'] | None = None
 
+    @field_validator('query')
+    @classmethod
+    def query_not_blank(cls, value):
+        if not value.strip():
+            raise ValueError('请输入检索问题')
+        return value.strip()
+
 
 async def call(method, *args):
     try:
@@ -129,6 +136,11 @@ async def original(kb_id: str, doc_id: str):
 @router.post('/{kb_id}/search')
 async def search(kb_id: str, body: SearchInput):
     return await call(get_service().search, kb_id, body.query, 6, body.mode)
+
+
+@router.post('/{kb_id}/compare')
+async def compare(kb_id: str, body: SearchInput):
+    return await call(get_service().compare, kb_id, body.query)
 
 
 class UploadLimitMiddleware:

@@ -15,6 +15,7 @@ const terminal = (status?: RunStatus) =>
 export class ActiveRun {
   readonly controller = new AbortController()
   cancelling = false
+  cancellation?: Promise<void>
   private timer?: ReturnType<typeof setTimeout>
   private buffer = ''
   private generation = 0
@@ -117,6 +118,7 @@ export class ActiveRun {
     this.flush()
     if (this.conversation.activeRun !== this.payload.run_id) return
     this.conversation.activeRun = undefined
+    this.conversation.cancelling = false
     if (this.assistant.status === 'error' || this.assistant.status === 'cancelled') {
       if (!this.conversation.draft) this.conversation.draft = this.payload.query
       if (!this.conversation.images.length) this.conversation.images = this.payload.images

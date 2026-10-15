@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { ElDrawer } from 'element-plus'
 import 'element-plus/es/components/drawer/style/css'
 import { knowledgeApi } from '../../api/knowledge'
 import type { Source } from '../../types'
 import type { Evidence } from '../../types/knowledge'
 const props = defineProps<{ source: Source }>()
+const PdfReader = defineAsyncComponent(() => import('./PdfReader.vue'))
+const reading = ref(false)
 const open = ref(false)
 const loading = ref(false)
 const error = ref('')
@@ -29,6 +31,7 @@ async function show() {
   }
 }
 function close() {
+  reading.value = false
   controller?.abort()
   loading.value = false
 }
@@ -51,7 +54,7 @@ onBeforeUnmount(close)
     <ElDrawer
       v-model="open"
       title="文档证据"
-      size="min(600px, 100vw)"
+      :size="reading ? 'min(860px, 100vw)' : 'min(600px, 100vw)'"
       append-to-body
       @close="close"
     >
@@ -84,6 +87,20 @@ onBeforeUnmount(close)
               }}）
             </p>
             <pre>{{ evidence.content || '索引版本已改变，请打开原文核对上方证据快照。' }}</pre>
+            <button
+              v-if="evidence.document_name.toLowerCase().endsWith('.pdf')"
+              class="kb-evidence-button"
+              @click="reading = !reading"
+            >
+              {{ reading ? '收起 PDF' : '在此阅读 PDF' }}
+            </button>
+            <PdfReader
+              v-if="reading && open"
+              :key="source.document_id + ':' + source.version"
+              :url="knowledgeApi.original(source)"
+              :initial-page="source.page ?? undefined"
+              :title="evidence.document_name"
+            />
             <a
               class="kb-evidence-button"
               :href="knowledgeApi.original(source) + (source.page ? `#page=${source.page}` : '')"

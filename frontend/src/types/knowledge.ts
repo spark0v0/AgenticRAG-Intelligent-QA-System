@@ -1,4 +1,46 @@
+import type { Source } from './index'
+
 export type KnowledgeMode = 'keyword' | 'hybrid'
+export type RetrievalMode = 'keyword' | 'semantic' | 'hybrid'
+export type RetrievalState =
+  'ready' | 'empty' | 'indexing' | 'not_ready' | 'no_match' | 'unavailable' | 'error'
+export interface RetrievalDocument {
+  content: string
+  source: string
+  score: number
+  metadata: Omit<Source, 'citation_id' | 'source'>
+  ranking?: {
+    keyword_rank: number | null
+    semantic_rank: number | null
+    bm25_score: number | null
+    cosine_similarity: number | null
+    rrf_score: number
+  }
+}
+export interface RetrievalResult {
+  documents: RetrievalDocument[]
+  metadata: {
+    state: RetrievalState
+    mode: RetrievalMode
+    knowledge_base_id: string
+    candidate_count: number
+    reason?: string
+  }
+}
+export interface RetrievalComparison {
+  knowledge_base_id: string
+  query: string
+  candidate_count: number
+  limit: number
+  timings: {
+    snapshot_ms: number
+    keyword_ms: number | null
+    semantic_ms: number | null
+    fusion_ms: number | null
+    total_ms: number
+  }
+  results: RetrievalResult[]
+}
 export type IndexStatus =
   | 'queued'
   | 'parsing'

@@ -29,7 +29,7 @@ test('reading controls keep copy feedback local, resize drafts and contain mobil
     source_map: [source],
   }
   await page.addInitScript(() => localStorage.setItem('rag-session', 'reading-fixture'))
-  await page.route('**/api/sessions', (route) =>
+  await page.route('**/api/sessions?*', (route) =>
     route.fulfill({
       json: {
         items: [
@@ -168,7 +168,7 @@ test('history refresh feedback stays in the sidebar and search can be cleared', 
 }) => {
   await page.goto('/chat')
   await expect(page.locator('.service-status')).toHaveText('服务已连接')
-  await page.route('**/api/sessions', (route) =>
+  await page.route('**/api/sessions?*', (route) =>
     route.fulfill({
       status: 503,
       json: { detail: '历史记录暂时不可用' },
@@ -180,7 +180,7 @@ test('history refresh feedback stays in the sidebar and search can be cleared', 
   })
   await expect(page.locator('.global-error')).toHaveCount(0)
   await expect(page.locator('.service-status')).toHaveText('服务已连接')
-  await page.unroute('**/api/sessions')
+  await page.unroute('**/api/sessions?*')
   await page.getByRole('button', { name: '刷新历史会话' }).click()
   await expect(page.locator('.sidebar [role=alert]')).toHaveCount(0)
   const search = page.getByRole('textbox', { name: '搜索历史会话' })

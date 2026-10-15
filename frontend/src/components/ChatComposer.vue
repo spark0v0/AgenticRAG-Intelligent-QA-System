@@ -264,11 +264,14 @@ function handleKey(event: KeyboardEvent) {
         <button
           v-if="store.busy"
           class="send-button stop-button"
-          aria-label="停止生成"
           title="停止本轮生成"
+          :disabled="store.current?.cancelling"
+          :aria-label="store.current?.cancelling ? '正在停止生成' : '停止生成'"
           @click="store.cancel()"
         >
-          <AppIcon name="stop" :size="16" /><span class="send-label">停止</span>
+          <AppIcon name="stop" :size="16" /><span class="send-label">{{
+            store.current?.cancelling ? '停止中…' : '停止'
+          }}</span>
         </button>
         <button
           v-else

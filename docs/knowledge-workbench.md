@@ -43,9 +43,9 @@ powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 1. 创建知识库，选择中文语义与关键词融合，或明确选择仅关键词。当前不支持在线更换该库的索引模型。
 2. 上传 TXT、Markdown、文本型 PDF。任务依次显示等待、提取文字、切分、索引、可检索。只有实际知道片段总数后才展示 `已处理 / 总数`。
 3. 可按名称搜索、按状态筛选，失败可重试、运行中可取消。重建失败会保留原有已提交索引，界面同时显示旧索引可用和本次任务失败。
-4. “检索预览”直接查看命中片段，可比较关键词、语义、融合模式，不调用回答模型。
+4. 展开“检索预览”，可单独检索关键词、语义或融合结果，也可选择“三种模式对比”并排查看排名、原始分数和片段。只执行本地检索，不调用回答模型；仅关键词库会明确显示语义与融合不可用。
 5. 点击“基于资料提问”，进入问答。问答入口显示当前知识库，支持本地或本地加联网；选库后禁止快速回答和仅联网这种绕过当前知识库的组合。
-6. 答案来源与运行分析均可打开证据面板，查看回答采用的快照、完整片段、章节/实际 PDF 页码与原文。文本按提取后的字符区间定位；PDF 原文链接带页码，实际跳页取决于浏览器 PDF 阅读器。
+6. 答案来源与运行分析均可打开证据面板，查看回答采用的快照、完整片段、章节/实际 PDF 页码与原文。文本按提取后的字符区间定位；PDF 可在抽屉内按页阅读、缩放和返回引用页，也保留原文链接。
 7. 删除文档立即排除检索，再异步删除向量、文件和片段。删除知识库会清理所有文档，成功后自动移除；部分失败保留可操作的“重试清理”。历史回答的来源快照保持不变，面板实时标注原文不可用。
 
 未选择用户知识库时，旧版“项目内置资料”入口仍明确标注并保持兼容。它仍使用原有中文二元分词、BM25 与哈希向量融合，不能称为成熟语义检索。**选择用户知识库后不会检索项目源码、配置图谱或其他知识库**。
@@ -74,7 +74,8 @@ powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 | `frontend/src/api/knowledge.ts` | 请求适配、FormData、管理请求头、原文安全路径 |
 | `frontend/src/stores/knowledge.ts` | 共享知识库目录、问答所选知识库、服务端上传限制 |
 | `frontend/src/composables/useKnowledgeDocuments.ts` | 文档读取、仅有活动任务时轮询、切库请求版本校验、取消与离页清理 |
-| `KnowledgeView.vue` | 页面协调、库操作、筛选条件、检索预览 |
+| `KnowledgeView.vue` | 页面协调、库操作、筛选条件 |
+| `RetrievalPreview.vue` | 单模式检索、三路对比、同片段编号、局部请求取消与切库清理 |
 | `KnowledgeUpload.vue` | 文件选择/拖放、前端限制与反馈 |
 | `DocumentTable.vue` | 文档状态、真实进度、重试/取消/删除事件 |
 | `EvidenceButton.vue` | 可复用证据抽屉、快照与现存原文状态 |
@@ -97,10 +98,20 @@ powershell -ExecutionPolicy Bypass -File scripts/start-workbench.ps1
 | `POST /knowledge/{kb}/documents/{doc}/cancel` | 取消当前索引 |
 | `DELETE /knowledge/{kb}/documents/{doc}` | 删除/重试清理 |
 | `POST /knowledge/{kb}/search` | `{query, mode}`，返回证据与 empty/indexing/not_ready/no_match/ready 状态 |
+| `POST /knowledge/{kb}/compare` | `{query}`，同一候选集的三路结果、排名细项和分阶段耗时；各路可独立返回 unavailable/error |
 | `GET /knowledge/{kb}/documents/{doc}/evidence/{chunk}` | 原文可用性、完整片段、实际位置 |
 | `GET /knowledge/{kb}/documents/{doc}/original` | 原始文件；已删除返回 410 |
 
 原 `/query` 和 `/query/stream` 在 `context` 增加 `knowledge_base_id`。知识库不存在或组合模式冲突会拒绝请求。Retriever 只执行 `library_search`，组合路径才额外执行 `web_search`；即使 Planner 给出其他工具提示也不能绕过范围。
+
+### 检索对比的读法
+
+对比接口沿用正式问答的分词、BM25、向量阈值和 RRF 实现，一次读取有效候选片段、最多执行一次查询嵌入，分别返回 `keyword/semantic/hybrid` 结果，每路最多显示 6 条。语义路径失败时保留关键词结果，语义与融合返回 `error`，不会将关键词结果伪装成成功的融合检索。
+
+- `documents[].ranking` 包含 `keyword_rank`、`semantic_rank`、`bm25_score`、`cosine_similarity` 和 `rrf_score`。每路取前 50 个候选，语义阈值为余弦相似度 0.35；融合为 `Σ 1/(60 + rank)`。旧 `score` 仍为归一化排名分数，保持原问答契约。
+- `timings` 包含候选读取、关键词计算、查询嵌入与向量检索、融合排序、服务端总耗时，单位毫秒。未执行阶段为 null，失败的语义尝试仍记录耗时。计算共用，因此不能视作三次独立请求的速度比较，也不包含网络和浏览器渲染。
+- 三列的“片段 N”由本次返回的稳定片段 ID 分配，只用于跨列核对；不是回答引用或逐句支持关系。不同模式分数量纲不同，不得直接比较数值大小或称为准确率。
+- 切库、离页、停止等待会取消前端请求读取并丢弃晚到结果；本地 CPU 检索一旦在线程中开始，可能继续执行至结束。预览结果不持久化，重新检索使用当时的有效索引。
 
 来源增加 `kind/knowledge_base_id/document_id/chunk_id/version/document_name/page/heading/start/end`；`page` 仅实际 PDF 页保留，其余不造页码。每轮执行维护稳定的引用编号映射；Generator 不再把同名文档的不同片段合成一个失去位置的来源。Critic 修订沿用该映射，最终答案、来源及历史由原有运行提交机制统一保存。
 

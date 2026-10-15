@@ -35,6 +35,12 @@ class SessionMemory:
                     PRIMARY KEY(run_id, seq)
                 );
                 CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS session_summaries (
+                    session_id TEXT PRIMARY KEY, session_title TEXT NOT NULL,
+                    preview TEXT NOT NULL, updated_at REAL NOT NULL,
+                    turn_count INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS summary_order ON session_summaries(pinned DESC, updated_at DESC);
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY, created_at REAL NOT NULL
                 );
@@ -52,8 +58,25 @@ class SessionMemory:
         if original.suffix == ".json" and original.exists():
             self._import_json(original)
         with self.connect() as db:
-            for row in db.execute("SELECT * FROM turns").fetchall():
-                self._save_messages(db, row["id"], row["session_id"], json.loads(row["payload"]))
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM migrations WHERE id='session-summary-v1'").fetchone():
+                for row in db.execute("SELECT * FROM turns").fetchall():
+                    self._save_messages(db, row["id"], row["session_id"], json.loads(row["payload"]))
+                rows = db.execute("""SELECT session_id,timestamp,json_extract(payload,'$.query') AS query,1 AS count FROM turns
+                    UNION ALL SELECT session_id,started_at,query,0 FROM runs
+                    WHERE id NOT IN (SELECT id FROM turns) ORDER BY timestamp""").fetchall()
+                for row in rows:
+                    self._touch_summary(db, row["session_id"], row["query"] or "", row["timestamp"], row["count"])
+                db.execute("INSERT INTO migrations VALUES('session-summary-v1')")
+
+    @staticmethod
+    def _touch_summary(db, session_id: str, query: str, timestamp: float, count: int = 0):
+        title = query.strip()[:24] + ("..." if len(query.strip()) > 24 else "") or "图片问答"
+        db.execute("""INSERT INTO session_summaries(session_id,session_title,preview,updated_at,turn_count)
+            VALUES(?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET
+            preview=CASE WHEN excluded.updated_at>=updated_at THEN excluded.preview ELSE preview END,
+            updated_at=MAX(updated_at,excluded.updated_at),turn_count=turn_count+excluded.turn_count""",
+            (session_id, title, query[:80], timestamp, count))
 
     def _save_messages(self, db, identity: str, session_id: str, turn: dict) -> None:
         db.execute("INSERT OR IGNORE INTO sessions VALUES(?,?)", (session_id, turn.get("timestamp") or time.time()))
@@ -77,6 +100,7 @@ class SessionMemory:
             session_id = row[0]
             db.execute("INSERT INTO turns VALUES(?,?,?,?)", (run_id, session_id, turn["timestamp"], json.dumps(turn, ensure_ascii=False)))
             self._save_messages(db, run_id, session_id, turn)
+            self._touch_summary(db, session_id, turn.get("query", ""), turn["timestamp"], 1)
             db.execute("UPDATE runs SET status='success',finished_at=?,result=? WHERE id=?", (
                 time.time(), json.dumps(result, ensure_ascii=False), run_id))
 
@@ -104,7 +128,11 @@ class SessionMemory:
             db.execute("INSERT OR IGNORE INTO migrations VALUES(?)", (migration,))
 
     def get_history(self, session_id: str, limit: int = 10) -> list[dict[str, Any]]:
-        return self.get_session(session_id)[-limit:]
+        if limit <= 0:
+            return []
+        with self.connect() as db:
+            rows = db.execute("SELECT payload FROM turns WHERE session_id=? ORDER BY timestamp DESC,rowid DESC LIMIT ?", (session_id, limit)).fetchall()
+            return [json.loads(row[0]) for row in reversed(rows)]
 
     def get_session(self, session_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:
@@ -112,25 +140,52 @@ class SessionMemory:
             return [json.loads(row[0]) for row in rows]
 
     def list_sessions(self) -> list[dict[str, Any]]:
+        return self.search_sessions("", 0, None)["items"]
+
+    def search_sessions(self, search: str = "", offset: int = 0, limit: int | None = 30) -> dict:
+        where = "WHERE (?='' OR instr(lower(session_title || ' ' || preview),lower(?))>0)"
         with self.connect() as db:
-            ids = db.execute("""SELECT session_id, MAX(timestamp) updated_at FROM (
-                SELECT session_id, timestamp FROM turns UNION ALL
-                SELECT session_id, started_at AS timestamp FROM runs
-            ) GROUP BY session_id ORDER BY updated_at DESC""").fetchall()
-        result = []
-        for row in ids:
-            turns = self.get_session(row["session_id"])
-            runs = self.list_runs(row["session_id"])
-            result.append({"session_id": row["session_id"], "updated_at": row["updated_at"],
-                           "turn_count": len(turns), "preview": (turns[-1]["query"] if turns else runs[-1]["query"])[:80]})
-        return result
+            total = db.execute("SELECT count(*) FROM session_summaries " + where, (search, search)).fetchone()[0]
+            rows = db.execute("SELECT * FROM session_summaries " + where + " ORDER BY pinned DESC,updated_at DESC,session_id LIMIT ? OFFSET ?",
+                              (search, search, limit if limit is not None else -1, offset)).fetchall()
+        return {"items": [{**dict(row), "pinned": bool(row["pinned"])} for row in rows], "total": total}
+
+    def session_summary(self, session_id: str) -> dict | None:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM session_summaries WHERE session_id=?", (session_id,)).fetchone()
+        return {**dict(row), "pinned": bool(row["pinned"])} if row else None
+
+    def update_session(self, session_id: str, title: str | None, pinned: bool | None) -> dict:
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM session_summaries WHERE session_id=?", (session_id,)).fetchone():
+                raise LookupError("会话不存在")
+            if title is not None:
+                title = title.strip()
+                if not title or len(title) > 80:
+                    raise ValueError("会话名称须为 1–80 个字符")
+                db.execute("UPDATE session_summaries SET session_title=? WHERE session_id=?", (title, session_id))
+            if pinned is not None:
+                db.execute("UPDATE session_summaries SET pinned=? WHERE session_id=?", (int(pinned), session_id))
+        return self.session_summary(session_id)
+
+    def delete_session(self, session_id: str) -> None:
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM runs WHERE session_id=? AND status='running'", (session_id,)).fetchone():
+                raise ValueError("该会话正在执行，请先停止生成再删除")
+            db.execute("DELETE FROM events WHERE run_id IN (SELECT id FROM runs WHERE session_id=?)", (session_id,))
+            for table, column in (("turns", "session_id"), ("messages", "session_id"), ("runs", "session_id"), ("sessions", "id"), ("session_summaries", "session_id")):
+                db.execute(f"DELETE FROM {table} WHERE {column}=?", (session_id,))
 
     def append_turn(self, session_id: str, turn: dict[str, Any], limit: int = 20) -> None:
         # Only model context is truncated, never the persistent history.
         with self.connect() as db:
-            db.execute("INSERT OR IGNORE INTO turns VALUES(?,?,?,?)", (
+            inserted = db.execute("INSERT OR IGNORE INTO turns VALUES(?,?,?,?)", (
                 turn.get("run_id") or str(uuid.uuid4()), session_id,
                 turn.get("timestamp") or time.time(), json.dumps(turn, ensure_ascii=False)))
+            if inserted.rowcount:
+                self._touch_summary(db, session_id, turn.get("query", ""), turn.get("timestamp") or time.time(), 1)
 
     def start_run(self, run_id: str, session_id: str, query: str, request: dict | None = None) -> None:
         # Store identifiers only, never arbitrary context or a provider configuration.
@@ -142,6 +197,7 @@ class SessionMemory:
             db.execute("INSERT INTO runs(id,session_id,status,started_at,query,request) VALUES(?,?,'running',?,?,?)",
                        (run_id, session_id, time.time(), query,
                         json.dumps(safe_request, ensure_ascii=False) if request is not None else None))
+            self._touch_summary(db, session_id, query, time.time())
 
     def finish_run(self, run_id: str, status: str, result: dict | None = None, error: str | None = None) -> None:
         with self.connect() as db:
@@ -155,8 +211,8 @@ class SessionMemory:
 
     def record_event(self, event: dict) -> None:
         with self.connect() as db:
-            db.execute("INSERT OR IGNORE INTO events VALUES(?,?,?)", (
-                event["run_id"], event["seq"], json.dumps(event, ensure_ascii=False)))
+            db.execute("INSERT OR IGNORE INTO events SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM runs WHERE id=?)", (
+                event["run_id"], event["seq"], json.dumps(event, ensure_ascii=False), event["run_id"]))
 
     def get_events(self, session_id: str, run_id: str | None = None) -> list[dict]:
         with self.connect() as db:

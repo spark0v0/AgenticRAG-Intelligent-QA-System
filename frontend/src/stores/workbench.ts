@@ -5,6 +5,7 @@ import { useKnowledge } from './knowledge'
 import { readEvents } from '../api/sse'
 import { ActiveRun } from '../chat/activeRun'
 import { restoreConversation } from '../chat/history'
+import { createDraftStorage } from '../chat/drafts'
 import type { Conversation } from '../types/chat'
 import type { QueryRequest, SessionSummary, SystemStatus } from '../types'
 
@@ -39,6 +40,11 @@ export const useWorkbench = defineStore('workbench', () => {
   for (const key of ['rag-mode', 'rag-session-demo', 'rag-session-live']) storage.remove(key)
   const system = ref<SystemStatus>()
   const sessions = ref<SessionSummary[]>([])
+  const sessionsTotal = ref(0)
+  const sessionSearch = ref('')
+  const loadingMore = ref(false)
+  let loadedSessions = 0
+  const drafts = createDraftStorage()
   const conversations = ref<Record<string, Conversation>>({})
   const currentId = ref('')
   const selectedRun = ref('')
@@ -75,6 +81,21 @@ export const useWorkbench = defineStore('workbench', () => {
     { flush: 'sync' },
   )
   const current = computed(() => conversations.value[currentId.value])
+  watch(
+    () =>
+      current.value && {
+        id: current.value.id,
+        draft: current.value.draft,
+        knowledgeBaseId: current.value.knowledgeBaseId,
+        searchScope: current.value.searchScope,
+        modelProfile: current.value.modelProfile,
+        thinkingMode: current.value.thinkingMode,
+      },
+    () => {
+      if (current.value) drafts.save(current.value)
+    },
+    { flush: 'sync' },
+  )
   const knowledge = useKnowledge()
   watch(
     currentId,
@@ -126,6 +147,9 @@ export const useWorkbench = defineStore('workbench', () => {
 
   function remember() {
     storage.set('rag-session', currentId.value)
+    if (current.value && !current.value.messages.length)
+      storage.set('rag-unsent-session', currentId.value)
+    else storage.remove('rag-unsent-session')
   }
   function newChat(persist = true) {
     loadVersion++
@@ -151,7 +175,10 @@ export const useWorkbench = defineStore('workbench', () => {
   }
   async function refreshSessions(signal?: AbortSignal) {
     const version = ++sessionsVersion
-    const response = await api.sessions(signal)
+    const response = await api.sessions(signal, {
+      search: sessionSearch.value,
+      limit: Math.min(100, Math.max(30, loadedSessions)),
+    })
     if (version !== sessionsVersion) return
     const active = sessions.value.filter(
       (s) =>
@@ -159,8 +186,61 @@ export const useWorkbench = defineStore('workbench', () => {
         !response.items.some((item) => item.session_id === s.session_id),
     )
     sessions.value = [...active, ...response.items]
+    loadedSessions = response.items.length
+    sessionsTotal.value = response.total ?? response.items.length
   }
-  async function loadSession(id: string) {
+  async function moreSessions(signal?: AbortSignal) {
+    if (loadingMore.value || loadedSessions >= sessionsTotal.value) return
+    loadingMore.value = true
+    const version = sessionsVersion
+    try {
+      const response = await api.sessions(signal, {
+        search: sessionSearch.value,
+        offset: loadedSessions,
+      })
+      if (version !== sessionsVersion) return
+      const ids = new Set(sessions.value.map((item) => item.session_id))
+      sessions.value.push(...response.items.filter((item) => !ids.has(item.session_id)))
+      loadedSessions += response.items.length
+      sessionsTotal.value = response.total ?? loadedSessions
+    } finally {
+      loadingMore.value = false
+    }
+  }
+  function resetSessionSearch(value: string) {
+    sessionSearch.value = value.trim().slice(0, 200)
+    loadedSessions = 0
+    sessionsVersion++
+  }
+  async function updateSession(
+    id: string,
+    changes: { title?: string; pinned?: boolean },
+    signal?: AbortSignal,
+  ) {
+    const result = await api.updateSession(id, changes, signal)
+    const entry = sessions.value.find((item) => item.session_id === id)
+    if (entry) Object.assign(entry, result)
+    if (conversations.value[id]) conversations.value[id].title = result.session_title
+    sessions.value.sort(
+      (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updated_at - a.updated_at,
+    )
+  }
+  async function deleteSession(id: string, signal?: AbortSignal) {
+    if (conversations.value[id]?.activeRun) throw new Error('请先停止生成再删除会话')
+    await api.deleteSession(id, signal)
+    loadVersion++
+    sessionController?.abort()
+    loadingSession.value = false
+    sessionsVersion++
+    sessions.value = sessions.value.filter((item) => item.session_id !== id)
+    sessionsTotal.value = Math.max(0, sessionsTotal.value - 1)
+    loadedSessions = Math.max(0, loadedSessions - 1)
+    drafts.remove(id)
+    if (currentId.value === id) newChat()
+    delete conversations.value[id]
+  }
+  async function loadSession(id: string, signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return false
     const version = ++loadVersion
     sessionController?.abort()
     selectedRun.value = ''
@@ -168,25 +248,32 @@ export const useWorkbench = defineStore('workbench', () => {
       currentId.value = id
       loadingSession.value = false
       remember()
-      return
+      return true
     }
     sessionController = new AbortController()
     loadingSession.value = true
     error.value = ''
     try {
-      const detail = await api.session(id, sessionController.signal)
-      if (version !== loadVersion) return
+      const detail = await api.session(
+        id,
+        signal ? AbortSignal.any([signal, sessionController.signal]) : sessionController.signal,
+      )
+      if (version !== loadVersion || signal?.aborted) return false
       conversations.value[id] = restoreConversation(detail)
+      const draft = drafts.get(id)
+      if (draft) Object.assign(conversations.value[id]!, draft)
       const messages = conversations.value[id]!.messages
       currentId.value = id
       selectedRun.value = messages.findLast((m) => m.role === 'assistant')?.run_id ?? ''
       remember()
+      return true
     } catch (e) {
       if (version === loadVersion && !(e instanceof DOMException && e.name === 'AbortError'))
         error.value = messageOf(e)
     } finally {
       if (version === loadVersion) loadingSession.value = false
     }
+    return false
   }
   async function initialize() {
     const version = ++initVersion
@@ -213,8 +300,42 @@ export const useWorkbench = defineStore('workbench', () => {
       if (version !== initVersion) return
       if (!currentId.value) {
         const saved = storage.get('rag-session')
-        if (saved && sessions.value.some((s) => s.session_id === saved)) await loadSession(saved)
-        else newChat()
+        if (saved && drafts.get(saved) && !sessions.value.some((s) => s.session_id === saved)) {
+          const draft = drafts.get(saved)!
+          try {
+            if (storage.get('rag-unsent-session') === saved) {
+              conversations.value[saved] = {
+                ...draft,
+                title: '未发送草稿',
+                messages: [],
+                events: [],
+                status: 'idle',
+                images: [],
+              }
+            } else {
+              const detail = await api.session(saved)
+              if (version !== initVersion || currentId.value) return
+              conversations.value[saved] = { ...restoreConversation(detail), ...draft }
+            }
+          } catch (cause) {
+            if (version !== initVersion || currentId.value) return
+            if (!(cause instanceof Error) || !('status' in cause) || cause.status !== 404)
+              throw cause
+            conversations.value[saved] = {
+              ...draft,
+              title: '未发送草稿',
+              messages: [],
+              events: [],
+              status: 'idle',
+              images: [],
+            }
+          }
+          currentId.value = saved
+        } else if (saved && storage.get('rag-unsent-session') === saved) {
+          newChat()
+        } else if (saved) {
+          if (!(await loadSession(saved))) newChat(false)
+        } else newChat()
       }
     } catch (e) {
       if (version === initVersion) error.value = messageOf(e)
@@ -243,6 +364,7 @@ export const useWorkbench = defineStore('workbench', () => {
       return
     }
     const id = crypto.randomUUID()
+    storage.remove('rag-unsent-session')
     const payload: QueryRequest = {
       query,
       session_id: conversation.id,
@@ -259,7 +381,7 @@ export const useWorkbench = defineStore('workbench', () => {
     conversation.status = 'submitting'
     conversation.error = ''
     conversation.restoreNotice = undefined
-    conversation.title = query.slice(0, 24) || '图片问答'
+    if (!conversation.messages.length) conversation.title = query.slice(0, 24) || '图片问答'
     conversation.draft = ''
     conversation.images = []
     const timestamp = Date.now() / 1000
@@ -289,6 +411,7 @@ export const useWorkbench = defineStore('workbench', () => {
         session_title: conversation.title,
         preview: query,
         turn_count: 0,
+        pinned: false,
         updated_at: timestamp,
       })
     try {
@@ -297,6 +420,8 @@ export const useWorkbench = defineStore('workbench', () => {
     } catch (e) {
       run.fail(e)
     } finally {
+      // Keep this run's input locked until cancellation is acknowledged or times out.
+      await run.cancellation
       run.release()
       if (pending.get(id) === run) pending.delete(id)
       await refreshSessions().catch(() => {
@@ -310,20 +435,25 @@ export const useWorkbench = defineStore('workbench', () => {
     const run = id ? pending.get(id) : undefined
     if (!id || !run || run.cancelling) return
     run.cancelling = true
-    try {
-      const response = await api.cancel(id)
-      // Completion can win the race against cancellation; the committed server result wins.
-      if (response.run?.status === 'success' && response.run.result) {
-        run.complete(response.run.result, '本轮已在取消前完成。')
+    const conversation = current.value!
+    conversation.cancelling = true
+    run.cancellation = (async () => {
+      try {
+        const response = await api.cancel(id, AbortSignal.timeout(5000))
+        // Completion can win the race against cancellation; the committed server result wins.
+        if (response.run?.status === 'success' && response.run.result) {
+          run.complete(response.run.result, '本轮已在取消前完成。')
+        }
+      } catch {
+        if (conversation.activeRun === id)
+          conversation.error = '已停止接收，但尚未确认服务端停止。请在运行分析中核对本轮状态。'
       }
-      if (pending.get(id) === run) run.abort()
-    } catch {
-      if (current.value?.activeRun === id)
-        current.value.error = '取消确认失败，已断开连接。服务端将在检测断开后停止，请刷新核对。'
-      run.abort()
-    }
+    })()
+    run.abort()
+    await run.cancellation
   }
   function dispose() {
+    drafts.flush()
     initVersion++
     sessionsVersion++
     loadVersion++
@@ -336,6 +466,13 @@ export const useWorkbench = defineStore('workbench', () => {
   return {
     system,
     sessions,
+    sessionsTotal,
+    sessionSearch,
+    loadingMore,
+    moreSessions,
+    resetSessionSearch,
+    updateSession,
+    deleteSession,
     conversations,
     currentId,
     current,

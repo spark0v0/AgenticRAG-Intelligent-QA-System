@@ -8,6 +8,7 @@ import { useKnowledge } from '../../src/stores/knowledge'
 import { knowledgeApi } from '../../src/api/knowledge'
 import MarkdownContent from '../../src/components/MarkdownContent.vue'
 import { ActiveRun } from '../../src/chat/activeRun'
+import { createDraftStorage } from '../../src/chat/drafts'
 import type { Conversation } from '../../src/types/chat'
 import type { ExecutionEvent, SystemStatus } from '../../src/types'
 
@@ -39,6 +40,48 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 afterEach(() => vi.restoreAllMocks())
+
+it('stops reading immediately and keeps input locked until cancellation acknowledgement', async () => {
+  const store = setupStore()
+  let transport!: AbortSignal
+  vi.spyOn(api, 'stream').mockImplementation(async (_, signal) => {
+    transport = signal
+    return new Response(new ReadableStream({ start(controller) {
+      signal.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')))
+    } }), { headers: { 'content-type': 'text/event-stream' } })
+  })
+  let acknowledge!: () => void
+  vi.spyOn(api, 'cancel').mockImplementation(() => new Promise(resolve => { acknowledge = () => resolve({ cancelled: true }) }))
+  store.current!.draft = 'cancel fixture'
+  const sending = store.send()
+  const stopping = store.cancel()
+  expect(transport.aborted).toBe(true)
+  expect(store.current!.cancelling).toBe(true)
+  expect(store.busy).toBe(true)
+  acknowledge()
+  await stopping
+  await sending
+  expect(store.busy).toBe(false)
+  expect(store.current!.draft).toBe('cancel fixture')
+  expect(store.current!.cancelling).toBe(false)
+  store.dispose()
+})
+
+it('persists bounded text drafts with selections and excludes attachments', () => {
+  const store = setupStore()
+  store.current!.draft = 'unsent question'
+  store.current!.knowledgeBaseId = 'library-a'
+  store.current!.images = [{ name: 'private-image', data_url: 'data:image/png;base64,fixture' }]
+  const storage = createDraftStorage()
+  storage.save(store.current!)
+  storage.flush()
+  expect(localStorage.getItem('rag-text-drafts-v1')).not.toContain('private-image')
+  expect(createDraftStorage().get(store.currentId)).toMatchObject({ draft: 'unsent question', knowledgeBaseId: 'library-a' })
+  storage.remove(store.currentId)
+  expect(createDraftStorage().get(store.currentId)).toBeUndefined()
+  store.current!.draft = ''
+  store.dispose()
+})
 
 it('parses Chinese UTF-8 byte boundaries, CRLF, heartbeats and multiple frames', async () => {
   const events: ExecutionEvent[] = []

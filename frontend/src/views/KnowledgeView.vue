@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElDialog, ElMessageBox, ElSelect, ElOption } from 'element-plus'
 import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/message-box/style/css'
@@ -12,21 +12,24 @@ import { useKnowledgeDocuments } from '../composables/useKnowledgeDocuments'
 import { knowledgeApi } from '../api/knowledge'
 import { indexLabels, isSearchable } from '../types/knowledge'
 import type { KnowledgeDocument, KnowledgeMode } from '../types/knowledge'
-import type { Source } from '../types'
 import AppIcon from '../components/AppIcon.vue'
 import KnowledgeUpload from '../components/knowledge/KnowledgeUpload.vue'
 import DocumentTable from '../components/knowledge/DocumentTable.vue'
-import EvidenceButton from '../components/knowledge/EvidenceButton.vue'
+import RetrievalPreview from '../components/knowledge/RetrievalPreview.vue'
 
 const store = useKnowledge()
 const workbench = useWorkbench()
 const router = useRouter()
-const selected = ref('')
+const route = useRoute()
+let restoringQuery = false
+let queryTimer: ReturnType<typeof setTimeout> | undefined
+const queryText = (key: string) => (typeof route.query[key] === 'string' ? route.query[key] : '')
+const selected = ref(queryText('kb'))
 const libraryStrip = ref<HTMLElement>()
 const { documents, loading, error: documentError, refresh } = useKnowledgeDocuments(selected)
 const current = computed(() => store.libraries.find((item) => item.id === selected.value))
-const search = ref('')
-const filter = ref('all')
+const search = ref(queryText('search'))
+const filter = ref(queryText('status') || 'all')
 const hasFilters = computed(() => !!search.value.trim() || filter.value !== 'all')
 const filtered = computed(() =>
   documents.value.filter(
@@ -52,13 +55,7 @@ const createErrorElement = ref<HTMLElement>()
 const nameInput = ref<HTMLInputElement>()
 const name = ref('')
 const mode = ref<KnowledgeMode>('hybrid')
-const probe = ref('')
-const probeMode = ref<'keyword' | 'semantic' | 'hybrid'>('keyword')
-const hits = ref<Source[]>([])
-const probeNotice = ref('')
-const probing = ref(false)
 const controller = new AbortController()
-let probeController: AbortController | undefined
 let disposed = false
 let libraryTimer: ReturnType<typeof setTimeout> | undefined
 const signal = controller.signal
@@ -71,26 +68,59 @@ function focusCreateName() {
     return
   input.focus({ preventScroll: true })
 }
-watch(selected, () => {
-  probeController?.abort()
-  hits.value = []
-  probeNotice.value = ''
-  search.value = ''
-  filter.value = 'all'
-  probeMode.value = current.value?.mode === 'hybrid' ? 'hybrid' : 'keyword'
-  void nextTick(() => {
-    libraryStrip.value
-      ?.querySelector<HTMLElement>('[aria-pressed="true"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  })
-})
+watch(
+  selected,
+  () => {
+    if (!restoringQuery) {
+      search.value = ''
+      filter.value = 'all'
+    }
+    void nextTick(() => {
+      libraryStrip.value
+        ?.querySelector<HTMLElement>('[aria-pressed="true"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+  },
+  { flush: 'sync' },
+)
+watch(
+  [selected, search, filter],
+  () => {
+    clearTimeout(queryTimer)
+    if (restoringQuery) return
+    queryTimer = setTimeout(() => {
+      void router.replace({
+        query: {
+          ...route.query,
+          kb: selected.value || undefined,
+          search: search.value || undefined,
+          status: filter.value === 'all' ? undefined : filter.value,
+        },
+      })
+    }, 250)
+  },
+  { flush: 'sync' },
+)
+watch(
+  () => [route.query.kb, route.query.search, route.query.status],
+  () => {
+    clearTimeout(queryTimer)
+    restoringQuery = true
+    selected.value = queryText('kb')
+    search.value = queryText('search')
+    filter.value = queryText('status') || 'all'
+    restoringQuery = false
+  },
+)
+onBeforeUnmount(() => clearTimeout(queryTimer))
 async function load() {
   await store.refresh(signal)
   clearTimeout(libraryTimer)
   if (disposed) return
   scheduleLibraryRefresh()
-  if (!store.libraries.some((item) => item.id === selected.value))
-    selected.value = store.libraries[0]?.id || ''
+  if (!selected.value) selected.value = store.libraries[0]?.id || ''
+  else if (!store.libraries.some((item) => item.id === selected.value))
+    error.value = '链接中的知识库不存在或已删除，请重新选择。'
 }
 function scheduleLibraryRefresh() {
   clearTimeout(libraryTimer)
@@ -150,8 +180,10 @@ async function create() {
   }
 }
 async function clearFilters() {
-  search.value = ''
-  filter.value = 'all'
+  if (!restoringQuery) {
+    search.value = ''
+    filter.value = 'all'
+  }
   await nextTick()
   searchInput.value?.focus()
 }
@@ -185,6 +217,7 @@ function remove() {
     const result = await knowledgeApi.remove(item.id, signal)
     operation.value = { id: '', label: item.name }
     feedback.value = result.message || '知识库已删除'
+    if (selected.value === item.id) selected.value = ''
     await load()
     await refresh()
   })
@@ -236,43 +269,6 @@ function documentAction(doc: KnowledgeDocument, kind: 'retry' | 'cancel' | 'dele
     await load()
   })
 }
-async function runProbe() {
-  if (!probe.value.trim() || !selected.value) return
-  probeController?.abort()
-  const request = new AbortController()
-  probeController = request
-  probing.value = true
-  hits.value = []
-  probeNotice.value = ''
-  try {
-    const result = await knowledgeApi.search(
-      selected.value,
-      probe.value,
-      probeMode.value,
-      request.signal,
-    )
-    if (request.signal.aborted) return
-    hits.value = result.documents.map((doc, index) => ({
-      ...doc.metadata,
-      citation_id: `S${index + 1}`,
-      source: doc.source,
-      excerpt: doc.content,
-    }))
-    const states: Record<string, string> = {
-      empty: '知识库为空，请先上传资料。',
-      indexing: '文档仍在索引，请稍后再试。',
-      not_ready: '文档尚未就绪，请检查失败状态或重建索引。',
-      no_match: '没有检索到匹配的片段，请换一种问法。',
-      ready: `找到 ${hits.value.length} 个证据片段。`,
-    }
-    probeNotice.value = states[result.metadata.state] || result.metadata.state
-  } catch (cause) {
-    if (!request.signal.aborted)
-      probeNotice.value = cause instanceof Error ? cause.message : '检索服务错误'
-  } finally {
-    if (probeController === request) probing.value = false
-  }
-}
 function ask() {
   store.selectedId = selected.value
   workbench.searchScope = 'local'
@@ -283,7 +279,6 @@ onMounted(() => void action(load))
 onBeforeUnmount(() => {
   disposed = true
   controller.abort()
-  probeController?.abort()
   clearTimeout(libraryTimer)
 })
 </script>
@@ -403,36 +398,7 @@ onBeforeUnmount(() => {
           </p>
           <button v-if="hasFilters" class="kb-primary" @click="clearFilters">清除筛选</button>
         </div>
-        <details class="kb-probe">
-          <summary>检索预览 <span>直接查看命中片段，不调用回答模型</span></summary>
-          <form @submit.prevent="runProbe">
-            <label for="kb-probe">用一个问题检查资料是否能被找到</label>
-            <div class="kb-probe-controls">
-              <input
-                id="kb-probe"
-                v-model="probe"
-                maxlength="2000"
-                placeholder="例如：项目的报销审批流程是什么？"
-              /><ElSelect v-model="probeMode" aria-label="检索模式"
-                ><ElOption label="关键词" value="keyword" /><ElOption
-                  v-if="current.mode === 'hybrid'"
-                  label="语义"
-                  value="semantic" /><ElOption
-                  v-if="current.mode === 'hybrid'"
-                  label="融合"
-                  value="hybrid" /></ElSelect
-              ><button class="kb-primary" :disabled="probing || !probe.trim()">
-                {{ probing ? '检索中…' : '检索' }}
-              </button>
-            </div>
-          </form>
-          <p v-if="probeNotice" role="status">{{ probeNotice }}</p>
-          <article v-for="hit in hits" :key="hit.chunk_id" class="kb-hit">
-            <strong>{{ hit.source }}</strong>
-            <p>{{ hit.excerpt }}</p>
-            <EvidenceButton :source="hit" />
-          </article>
-        </details>
+        <RetrievalPreview :library="current" />
       </section>
       <section v-else-if="busy || error" class="kb-empty kb-first" role="status">
         <h2>{{ busy ? '正在读取知识库…' : '知识库暂时不可用' }}</h2>

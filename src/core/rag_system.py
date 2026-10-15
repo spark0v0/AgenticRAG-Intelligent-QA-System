@@ -181,7 +181,7 @@ class AgenticRAGSystem:
 
         session_history = [*self.memory.get_session(session_id), result["_turn"]]
         result["messages"] = self._build_messages(session_history)
-        result["session_title"] = self._build_session_title(session_history)
+        result["session_title"] = (self.memory.session_summary(session_id) or {}).get("session_title", self._build_session_title(session_history))
         result["turn_count"] = len(session_history)
         result["image_count"] = len(images)
         result["model_profile"] = selected_profile["id"]
@@ -496,7 +496,7 @@ class AgenticRAGSystem:
         history = self.memory.get_session(session_id)
         return {
             "session_id": session_id,
-            "session_title": self._build_session_title(history),
+            "session_title": (self.memory.session_summary(session_id) or {}).get("session_title", self._build_session_title(history)),
             "turn_count": len(history),
             "messages": self._build_messages(history),
             "trace": self._generate_execution_trace(session_id),
@@ -504,11 +504,7 @@ class AgenticRAGSystem:
         }
 
     def list_sessions(self) -> List[Dict[str, Any]]:
-        sessions = self.memory.list_sessions()
-        for item in sessions:
-            history = self.memory.get_session(item["session_id"])
-            item["session_title"] = self._build_session_title(history) if history else item["preview"][:24]
-        return sessions
+        return self.memory.list_sessions()
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [

@@ -1,19 +1,41 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElMessageBox } from 'element-plus'
+import 'element-plus/es/components/dropdown/style/css'
+import 'element-plus/es/components/dropdown-menu/style/css'
+import 'element-plus/es/components/dropdown-item/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import { api } from '../api/client'
+import { exportConversation } from '../chat/export'
+import type { SessionSummary } from '../types'
 import { useWorkbench } from '../stores/workbench'
 import AppIcon from './AppIcon.vue'
 const props = defineProps<{ open: boolean; mobile: boolean }>()
 const emit = defineEmits<{ newChat: []; select: [id: string]; close: []; navigate: [] }>()
 const store = useWorkbench()
-const search = ref('')
+const search = ref(store.sessionSearch)
 const searchInput = ref<HTMLInputElement>()
 const navigation = ref<HTMLElement>()
 const refreshing = ref(false)
 const refreshError = ref('')
 let refreshController: AbortController | undefined
-onBeforeUnmount(() => refreshController?.abort())
+const actionController = new AbortController()
+const actionBusy = ref('')
+const feedback = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => {
+  refreshController?.abort()
+  actionController.abort()
+  clearTimeout(searchTimer)
+})
+watch(search, (value) => {
+  refreshController?.abort()
+  clearTimeout(searchTimer)
+  store.resetSessionSearch(value)
+  searchTimer = setTimeout(() => void refreshHistory(), 250)
+})
 async function refreshHistory() {
-  if (refreshing.value) return
+  refreshController?.abort()
   const controller = new AbortController()
   refreshController = controller
   refreshing.value = true
@@ -24,7 +46,69 @@ async function refreshHistory() {
     if (!controller.signal.aborted)
       refreshError.value = cause instanceof Error ? cause.message : '记录刷新失败，请重试'
   } finally {
-    if (!controller.signal.aborted) refreshing.value = false
+    if (refreshController === controller) refreshing.value = false
+  }
+}
+async function more() {
+  refreshError.value = ''
+  try {
+    await store.moreSessions(actionController.signal)
+  } catch (cause) {
+    if (!actionController.signal.aborted)
+      refreshError.value = cause instanceof Error ? cause.message : '加载失败'
+  }
+}
+async function act(command: string, session: SessionSummary) {
+  if (actionBusy.value) return
+  actionBusy.value = session.session_id
+  feedback.value = ''
+  refreshError.value = ''
+  try {
+    if (command === 'rename') {
+      const result = await ElMessageBox.prompt('为这段对话设置一个便于查找的名称', '重命名会话', {
+        inputValue: session.session_title,
+        inputValidator: (value) =>
+          (!!value?.trim() && value.trim().length <= 80) || '请输入 1–80 个字符',
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+      })
+      if (actionController.signal.aborted) return
+      await store.updateSession(
+        session.session_id,
+        { title: result.value.trim() },
+        actionController.signal,
+      )
+      feedback.value = '会话名称已保存'
+    } else if (command === 'pin') {
+      await store.updateSession(
+        session.session_id,
+        { pinned: !session.pinned },
+        actionController.signal,
+      )
+      feedback.value = session.pinned ? '会话已置顶' : '已取消置顶'
+    } else if (command === 'delete') {
+      await ElMessageBox.confirm(
+        `删除“${session.session_title}”及其消息和运行记录？此操作无法撤销，知识库文档不受影响。`,
+        '删除会话',
+        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '保留' },
+      )
+      if (actionController.signal.aborted) return
+      await store.deleteSession(session.session_id, actionController.signal)
+      feedback.value = '会话已删除'
+      await nextTick()
+      navigation.value?.querySelector<HTMLButtonElement>('.new-chat-button')?.focus()
+    } else if (command === 'export') {
+      const detail = await api.session(session.session_id, actionController.signal)
+      if (!actionController.signal.aborted) {
+        exportConversation(detail)
+        feedback.value = '对话已导出为 Markdown，包含问题与回答，请按需保管'
+      }
+    }
+  } catch (cause) {
+    if (!actionController.signal.aborted && cause !== 'cancel' && cause !== 'close')
+      refreshError.value = cause instanceof Error ? cause.message : '操作失败，请重试'
+  } finally {
+    actionBusy.value = ''
   }
 }
 async function clearSearch() {
@@ -118,6 +202,7 @@ function dateLabel(timestamp: number) {
     <p v-if="refreshError" class="history-error" role="alert">
       {{ refreshError }}，可点击刷新重试。
     </p>
+    <p v-if="feedback" class="history-feedback" role="status">{{ feedback }}</p>
     <label class="history-search"
       ><AppIcon name="search" :size="15" /><input
         ref="searchInput"
@@ -139,18 +224,52 @@ function dateLabel(timestamp: number) {
       <p v-if="!filtered.length && !refreshing && !store.loading" class="sidebar-empty">
         {{ search ? '没有匹配的会话' : '提问后，会话将保存在这里' }}
       </p>
+      <div v-for="session in filtered" :key="session.session_id" class="session-row">
+        <button
+          class="session-item"
+          :class="{ selected: store.currentId === session.session_id }"
+          :aria-current="store.currentId === session.session_id ? 'true' : undefined"
+          :title="session.session_title"
+          @click="$emit('select', session.session_id)"
+        >
+          <AppIcon :name="session.pinned ? 'pin' : 'chat'" :size="15" /><span>{{
+            session.session_title
+          }}</span
+          ><small>{{ dateLabel(session.updated_at) }}</small>
+          <i v-if="store.conversations[session.session_id]?.activeRun" class="live-dot"></i>
+        </button>
+        <ElDropdown trigger="click" @command="act($event, session)">
+          <button
+            class="icon-button session-actions"
+            :aria-label="`会话操作：${session.session_title}`"
+            :disabled="!!actionBusy"
+          >
+            <AppIcon name="more" :size="15" />
+          </button>
+          <template #dropdown
+            ><ElDropdownMenu>
+              <ElDropdownItem command="rename">重命名</ElDropdownItem>
+              <ElDropdownItem command="pin">{{
+                session.pinned ? '取消置顶' : '置顶会话'
+              }}</ElDropdownItem>
+              <ElDropdownItem command="export">导出 Markdown</ElDropdownItem>
+              <ElDropdownItem
+                command="delete"
+                divided
+                :disabled="!!store.conversations[session.session_id]?.activeRun"
+                >删除会话</ElDropdownItem
+              >
+            </ElDropdownMenu></template
+          >
+        </ElDropdown>
+      </div>
       <button
-        v-for="session in filtered"
-        :key="session.session_id"
-        class="session-item"
-        :class="{ selected: store.currentId === session.session_id }"
-        :aria-current="store.currentId === session.session_id ? 'true' : undefined"
-        :title="session.session_title"
-        @click="$emit('select', session.session_id)"
+        v-if="store.sessions.length < store.sessionsTotal"
+        class="history-more"
+        :disabled="store.loadingMore || refreshing"
+        @click="more"
       >
-        <AppIcon name="chat" :size="15" /><span>{{ session.session_title }}</span
-        ><small>{{ dateLabel(session.updated_at) }}</small>
-        <i v-if="store.conversations[session.session_id]?.activeRun" class="live-dot"></i>
+        {{ store.loadingMore ? '正在加载…' : '加载更多会话' }}
       </button>
     </div>
     <div class="sidebar-bottom">

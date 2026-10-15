@@ -1,3 +1,4 @@
+import type { components } from './api.generated'
 export type RunStatus = 'idle' | 'submitting' | 'streaming' | 'success' | 'error' | 'cancelled'
 export type SearchScope = 'auto' | 'local' | 'web' | 'all'
 export interface RequestSnapshot {
@@ -86,13 +87,7 @@ export interface Message {
   notice?: string
   phase?: string
 }
-export interface SessionSummary {
-  session_id: string
-  session_title: string
-  turn_count: number
-  updated_at: number
-  preview: string
-}
+export type SessionSummary = components['schemas']['SessionSummary']
 export interface RunRecord {
   id: string
   session_id: string

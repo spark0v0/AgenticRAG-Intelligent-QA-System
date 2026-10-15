@@ -37,8 +37,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="AgenticRAG 智能问答工作台", version="4.0.0", lifespan=lifespan)
-app.include_router(router)
-app.include_router(router, prefix="/api", include_in_schema=False)
+app.include_router(router, include_in_schema=False)
+app.include_router(router, prefix="/api")
 app.include_router(provider_router, prefix="/api")
 app.include_router(knowledge_router, prefix="/api")
 app.add_middleware(UploadLimitMiddleware)
@@ -51,8 +51,14 @@ async def validation_error(request, exc):
         {"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()
     ]})
 DIST = ROOT / "frontend/dist"
+# Windows registry MIME mappings may label .mjs as text/plain; module workers reject it.
+import mimetypes
+mimetypes.add_type('application/javascript', '.mjs')
+mimetypes.add_type('application/wasm', '.wasm')
 if (DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+if (DIST / "pdfjs").exists():
+    app.mount("/pdfjs", StaticFiles(directory=DIST / "pdfjs"), name="pdfjs")
 
 
 @app.get("/legacy", response_class=HTMLResponse, include_in_schema=False)

@@ -22,10 +22,30 @@ const router = useRouter()
 const store = useWorkbench()
 const items = ref<RunRecord[]>([])
 const total = ref(0)
-const page = ref(0)
-const search = ref('')
-const status = ref('')
+const page = computed({
+  get: () => Math.max(0, Math.min(100000, Number(route.query.page) || 0)),
+  set: (value) => {
+    void router.replace({ query: { ...route.query, page: value || undefined } })
+  },
+})
+const search = ref(typeof route.query.search === 'string' ? route.query.search : '')
+const status = computed({
+  get: () =>
+    typeof route.query.status === 'string' &&
+    ['success', 'error', 'cancelled'].includes(route.query.status)
+      ? route.query.status
+      : '',
+  set: (value) => {
+    void router.replace({ query: { ...route.query, status: value || undefined, page: undefined } })
+  },
+})
 const error = ref('')
+const detailError = ref('')
+const lastUpdated = ref(0)
+const retryCount = ref(0)
+const reconnecting = ref(false)
+const openingChat = ref(false)
+let chatController: AbortController | undefined
 const loading = ref(false)
 const run = ref<RunDetail>()
 const selectedStage = ref('')
@@ -67,7 +87,7 @@ async function loadList() {
     items.value = result.items
     total.value = result.total
     if (!route.query.run && items.value[0] && !window.matchMedia('(max-width: 1000px)').matches)
-      await router.replace({ query: { run: items.value[0].id } })
+      await router.replace({ query: { ...route.query, run: items.value[0].id } })
   } catch (e) {
     if (!(e instanceof DOMException && e.name === 'AbortError') && version === listVersion)
       error.value = e instanceof Error ? e.message : '读取失败'
@@ -80,11 +100,14 @@ async function loadDetail(id: string, background = false) {
   detailController = new AbortController()
   const version = ++detailVersion
   clearTimeout(poll)
+  reconnecting.value = false
   if (!background) {
     detailLoading.value = true
     run.value = undefined
     selectedStage.value = ''
-    error.value = ''
+    detailError.value = ''
+    lastUpdated.value = 0
+    retryCount.value = 0
   }
   try {
     const result = await requestJson<RunDetail>(`/runs/${encodeURIComponent(id)}`, {
@@ -92,11 +115,24 @@ async function loadDetail(id: string, background = false) {
     })
     if (version !== detailVersion || disposed) return
     run.value = result
+    detailError.value = ''
+    lastUpdated.value = Date.now()
+    retryCount.value = 0
     if (result.status === 'running') poll = setTimeout(() => void loadDetail(id, true), 2000)
     else if (background) void loadList()
   } catch (e) {
-    if (!(e instanceof DOMException && e.name === 'AbortError') && version === detailVersion)
-      error.value = e instanceof Error ? e.message : '读取失败'
+    if (
+      !(e instanceof DOMException && e.name === 'AbortError') &&
+      version === detailVersion &&
+      !disposed
+    ) {
+      detailError.value = e instanceof Error ? e.message : '读取失败'
+      if (background && retryCount.value < 3) {
+        retryCount.value++
+        reconnecting.value = true
+        poll = setTimeout(() => void loadDetail(id, true), 2000 * 2 ** (retryCount.value - 1))
+      }
+    }
   } finally {
     if (!disposed && version === detailVersion) detailLoading.value = false
   }
@@ -104,6 +140,8 @@ async function loadDetail(id: string, background = false) {
 watch(
   () => route.query.run,
   (id) => {
+    chatController?.abort()
+    openingChat.value = false
     if (typeof id === 'string') {
       mobileDetail.value = true
       void loadDetail(id)
@@ -117,19 +155,32 @@ watch(
   },
   { immediate: true },
 )
-watch([search, status], () => {
+watch(search, () => {
   clearTimeout(debounce)
+  if (search.value === (route.query.search || '')) return
   listController?.abort()
   listVersion++
   debounce = setTimeout(() => {
-    if (page.value === 0) void loadList()
-    else page.value = 0
+    void router.replace({
+      query: {
+        ...route.query,
+        search: search.value.trim().slice(0, 200) || undefined,
+        page: undefined,
+      },
+    })
   }, 250)
 })
-watch(page, () => void loadList())
+watch(
+  () => [route.query.search, route.query.status, route.query.page],
+  () => {
+    search.value = typeof route.query.search === 'string' ? route.query.search : ''
+    void loadList()
+  },
+)
 onMounted(loadList)
 onUnmounted(() => {
   disposed = true
+  chatController?.abort()
   detailVersion++
   listVersion++
   clearTimeout(poll)
@@ -167,10 +218,24 @@ function time(value: number) {
   })
 }
 async function openChat() {
-  if (!run.value) return
-  await store.loadSession(run.value.session_id)
-  store.selectedRun = run.value.id
-  await router.push('/chat')
+  if (!run.value || openingChat.value) return
+  const target = { id: run.value.id, session: run.value.session_id }
+  const controller = new AbortController()
+  chatController?.abort()
+  chatController = controller
+  openingChat.value = true
+  try {
+    const loaded = await store.loadSession(target.session, controller.signal)
+    if (disposed || controller.signal.aborted || route.query.run !== target.id) return
+    if (!loaded) {
+      detailError.value = store.error || '会话读取失败，请重试'
+      return
+    }
+    store.selectedRun = target.id
+    await router.push('/chat')
+  } finally {
+    if (chatController === controller) openingChat.value = false
+  }
 }
 function exportRun() {
   if (!run.value) return
@@ -184,6 +249,7 @@ function exportRun() {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 function refresh() {
+  retryCount.value = 0
   void loadList()
   if (typeof route.query.run === 'string') void loadDetail(route.query.run, true)
 }
@@ -199,6 +265,14 @@ function refresh() {
       </button>
     </div>
     <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
+    <p v-if="detailError" class="inline-error" role="alert">
+      运行详情：{{ detailError }}。{{ reconnecting ? '正在尝试重新连接。' : '请重新读取。' }}
+      <button class="text-action" @click="refresh">重新读取</button>
+    </p>
+    <p v-if="lastUpdated" class="muted run-updated" role="status">
+      详情更新于 {{ new Date(lastUpdated).toLocaleTimeString('zh-CN')
+      }}<span v-if="detailError"> · 当前显示上次读取的记录</span>
+    </p>
     <div class="runs-layout" :class="{ 'show-detail': mobileDetail }">
       <section class="runs-index" aria-label="运行列表">
         <label class="search-field"
@@ -280,8 +354,8 @@ function refresh() {
               @click="exportRun"
             >
               <AppIcon name="download" :size="17" /></button
-            ><button class="text-action" @click="openChat">
-              回到会话<AppIcon name="diagonal" :size="16" />
+            ><button class="text-action" :disabled="openingChat" @click="openChat">
+              {{ openingChat ? '正在打开…' : '回到会话' }}<AppIcon name="diagonal" :size="16" />
             </button>
           </div>
         </header>

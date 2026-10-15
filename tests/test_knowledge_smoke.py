@@ -116,6 +116,13 @@ def test_api_validation_pdf_position_and_upload(tmp_path, monkeypatch):
         assert client.post(path, files={'files': ('hello.md', '# Hello\n\nDocument evidence.'.encode())}, headers=headers).json()['items'][0]['duplicate']
         svc.process_next()
         assert client.get(path).json()['items'][0]['status'] == 'completed'
+        comparison = client.post(f'/api/knowledge/{kb}/compare', json={'query': 'evidence'}, headers=headers)
+        assert comparison.status_code == 200
+        modes = comparison.json()['results']
+        assert [item['metadata']['state'] for item in modes] == ['ready', 'unavailable', 'unavailable']
+        assert modes[0]['documents'][0]['ranking']['bm25_score'] > 0
+        assert comparison.json()['timings']['semantic_ms'] is None
+        assert client.post(f'/api/knowledge/{kb}/compare', json={'query': '   '}, headers=headers).status_code == 422
     from pypdf import PdfWriter
     from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
     writer = PdfWriter()
@@ -152,3 +159,65 @@ def test_query_pipeline_keeps_selected_library_and_persists_evidence(tmp_path, m
         assert saved['source_map'] == result['source_map']
         assert saved['answer'] == result['answer']
     asyncio.run(run())
+
+
+def test_comparison_shares_embedding_and_keeps_modes_isolated(tmp_path, monkeypatch):
+    svc = service(tmp_path)
+    kb = svc.create('对比夹具', 'hybrid')['id']
+    other = svc.create('禁止混入', 'hybrid')['id']
+    calls = []
+    def embedding(texts, query=False):
+        calls.append(query)
+        # Deliberately different lexical/semantic orders. This validates routing/ranking, not model quality.
+        return [([1., 0.] if query or '收据' in text else [.6, .8]) + [0.] * 510 for text in texts]
+    monkeypatch.setattr(svc.embed, 'encode', embedding)
+    first = svc.upload(kb, '审批.txt', '报销须填写审批表格。'.encode())['document']
+    second = svc.upload(kb, '费用.txt', '出差费用需要收据。'.encode())['document']
+    svc.upload(other, '隔离.txt', '报销收据属于其他知识库。'.encode())
+    while svc.process_next():
+        pass
+    calls.clear()
+    result = svc.compare(kb, '报销')
+    assert calls == [True]  # Query embedding is shared by semantic and hybrid modes.
+    keyword, semantic, hybrid = result['results']
+    assert keyword['documents'][0]['metadata']['document_id'] == first['id']
+    assert semantic['documents'][0]['metadata']['document_id'] == second['id']
+    assert hybrid['documents'][0]['metadata']['document_id'] == first['id']
+    assert result['candidate_count'] == 2
+    for mode_result in result['results']:
+        mode = mode_result['metadata']['mode']
+        assert all(doc['metadata']['knowledge_base_id'] == kb for doc in mode_result['documents'])
+        normal = svc.search(kb, '报销', mode=mode)
+        assert [{k: v for k, v in doc.items() if k != 'ranking'} for doc in mode_result['documents']] == normal['documents']
+    rank = hybrid['documents'][0]['ranking']
+    assert rank['keyword_rank'] == 1 and rank['semantic_rank'] == 2
+    assert rank['rrf_score'] == pytest.approx(1 / 61 + 1 / 62)
+    assert all(value >= 0 for value in result['timings'].values())
+    svc.delete_document(kb, second['id'])
+    assert all(doc['metadata']['document_id'] != second['id'] for mode in svc.compare(kb, '报销')['results'] for doc in mode['documents'])
+    def unavailable(*args, **kwargs):
+        raise RuntimeError('private-path-and-key-must-not-leak')
+    monkeypatch.setattr(svc.embed, 'encode', unavailable)
+    failed = svc.compare(kb, '报销')
+    assert [mode['metadata']['state'] for mode in failed['results']] == ['ready', 'error', 'error']
+    assert 'private-path' not in str(failed)
+    assert failed['timings']['fusion_ms'] is None
+
+
+def test_comparison_distinguishes_empty_pending_and_deleted(tmp_path, monkeypatch):
+    svc = service(tmp_path)
+    kb = svc.create('索引状态', 'keyword')['id']
+    def forbidden(*args, **kwargs):
+        pytest.fail('Keyword-only comparison must not load an embedding model')
+    monkeypatch.setattr(svc.embed, 'encode', forbidden)
+    assert svc.compare(kb, '流程')['results'][0]['metadata']['state'] == 'empty'
+    doc = svc.upload(kb, '流程.txt', '请按审批流程提交申请。'.encode())['document']
+    assert svc.compare(kb, '流程')['results'][0]['metadata']['state'] == 'indexing'
+    svc.cancel(kb, doc['id'])
+    assert svc.compare(kb, '流程')['results'][0]['metadata']['state'] == 'not_ready'
+    svc.retry(kb, doc['id'])
+    svc.process_next()
+    assert svc.compare(kb, 'nonexistent')['results'][0]['metadata']['state'] == 'no_match'
+    svc.delete_library(kb)
+    with pytest.raises(LookupError):
+        svc.compare(kb, '流程')

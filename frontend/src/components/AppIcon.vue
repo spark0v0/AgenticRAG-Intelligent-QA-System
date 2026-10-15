@@ -40,6 +40,8 @@ import {
   GitBranch,
   ArrowUpRight,
   SlidersHorizontal,
+  Pin,
+  Ellipsis,
 } from '@lucide/vue'
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), { size: 20 })
 const icons = {
@@ -82,6 +84,8 @@ const icons = {
   branch: GitBranch,
   diagonal: ArrowUpRight,
   settings: SlidersHorizontal,
+  pin: Pin,
+  more: Ellipsis,
 }
 const icon = computed(() => icons[props.name as keyof typeof icons] ?? Sparkles)
 </script>
