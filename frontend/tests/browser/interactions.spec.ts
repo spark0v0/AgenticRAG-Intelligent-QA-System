@@ -44,7 +44,7 @@ test('reading controls keep copy feedback local, resize drafts and contain mobil
       },
     }),
   )
-  await page.route('**/api/sessions/reading-fixture', (route) =>
+  await page.route('**/api/sessions/reading-fixture*', (route) =>
     route.fulfill({
       json: {
         session_id: result.session_id,

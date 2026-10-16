@@ -106,6 +106,7 @@ export interface SessionDetail {
   messages: Message[]
   trace: ExecutionEvent[]
   runs: RunRecord[]
+  history_page?: { next_cursor: string | null }
 }
 export interface ToolSpec {
   name: string

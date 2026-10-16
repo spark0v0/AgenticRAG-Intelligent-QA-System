@@ -4,7 +4,7 @@ import { api } from '../api/client'
 import { useKnowledge } from './knowledge'
 import { readEvents } from '../api/sse'
 import { ActiveRun } from '../chat/activeRun'
-import { restoreConversation } from '../chat/history'
+import { prependHistory, restoreConversation } from '../chat/history'
 import { createDraftStorage } from '../chat/drafts'
 import type { Conversation } from '../types/chat'
 import type { QueryRequest, SessionSummary, SystemStatus } from '../types'
@@ -61,6 +61,8 @@ export const useWorkbench = defineStore('workbench', () => {
   const pending = new Map<string, ActiveRun>() // non-serializable resources stay outside Pinia state
   let loadVersion = 0
   let sessionController: AbortController | undefined
+  let historyController: AbortController | undefined
+  const historyLimit = 20
   let initVersion = 0
   let sessionsVersion = 0
   let restoring = false
@@ -152,6 +154,7 @@ export const useWorkbench = defineStore('workbench', () => {
     else storage.remove('rag-unsent-session')
   }
   function newChat(persist = true) {
+    cancelHistoryLoad()
     loadVersion++
     sessionController?.abort()
     loadingSession.value = false
@@ -228,6 +231,7 @@ export const useWorkbench = defineStore('workbench', () => {
   async function deleteSession(id: string, signal?: AbortSignal) {
     if (conversations.value[id]?.activeRun) throw new Error('请先停止生成再删除会话')
     await api.deleteSession(id, signal)
+    cancelHistoryLoad()
     loadVersion++
     sessionController?.abort()
     loadingSession.value = false
@@ -239,12 +243,55 @@ export const useWorkbench = defineStore('workbench', () => {
     if (currentId.value === id) newChat()
     delete conversations.value[id]
   }
-  async function loadSession(id: string, signal?: AbortSignal): Promise<boolean> {
+  function cancelHistoryLoad() {
+    historyController?.abort()
+    historyController = undefined
+    if (current.value) current.value.loadingHistory = false
+  }
+  async function loadEarlier(signal?: AbortSignal): Promise<boolean> {
+    const conversation = current.value
+    const cursor = conversation?.historyCursor
+    if (!conversation || !cursor || conversation.loadingHistory || signal?.aborted) return false
+    const controller = new AbortController()
+    historyController = controller
+    conversation.loadingHistory = true
+    conversation.historyError = ''
+    try {
+      const detail = await api.session(
+        conversation.id,
+        signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+        { limit: historyLimit, before: cursor },
+      )
+      if (controller.signal.aborted || signal?.aborted || current.value !== conversation)
+        return false
+      prependHistory(conversation, detail)
+      return true
+    } catch (cause) {
+      if (!controller.signal.aborted && !signal?.aborted && current.value === conversation)
+        conversation.historyError = messageOf(cause)
+      return false
+    } finally {
+      if (historyController === controller) {
+        conversation.loadingHistory = false
+        historyController = undefined
+      }
+    }
+  }
+  async function loadSession(
+    id: string,
+    signal?: AbortSignal,
+    targetRun?: string,
+  ): Promise<boolean> {
     if (signal?.aborted) return false
+    cancelHistoryLoad()
     const version = ++loadVersion
     sessionController?.abort()
     selectedRun.value = ''
-    if (conversations.value[id]) {
+    const existing = conversations.value[id]
+    if (
+      existing &&
+      (!targetRun || existing.messages.some((message) => message.run_id === targetRun))
+    ) {
       currentId.value = id
       loadingSession.value = false
       remember()
@@ -257,11 +304,16 @@ export const useWorkbench = defineStore('workbench', () => {
       const detail = await api.session(
         id,
         signal ? AbortSignal.any([signal, sessionController.signal]) : sessionController.signal,
+        // Explicit navigation to an older run retains the original full-history behavior.
+        targetRun ? undefined : { limit: historyLimit },
       )
       if (version !== loadVersion || signal?.aborted) return false
-      conversations.value[id] = restoreConversation(detail)
-      const draft = drafts.get(id)
-      if (draft) Object.assign(conversations.value[id]!, draft)
+      if (existing) prependHistory(existing, detail)
+      else {
+        conversations.value[id] = restoreConversation(detail)
+        const draft = drafts.get(id)
+        if (draft) Object.assign(conversations.value[id]!, draft)
+      }
       const messages = conversations.value[id]!.messages
       currentId.value = id
       selectedRun.value = messages.findLast((m) => m.role === 'assistant')?.run_id ?? ''
@@ -313,7 +365,7 @@ export const useWorkbench = defineStore('workbench', () => {
                 images: [],
               }
             } else {
-              const detail = await api.session(saved)
+              const detail = await api.session(saved, undefined, { limit: historyLimit })
               if (version !== initVersion || currentId.value) return
               conversations.value[saved] = { ...restoreConversation(detail), ...draft }
             }
@@ -453,6 +505,7 @@ export const useWorkbench = defineStore('workbench', () => {
     await run.cancellation
   }
   function dispose() {
+    cancelHistoryLoad()
     drafts.flush()
     initVersion++
     sessionsVersion++
@@ -492,6 +545,7 @@ export const useWorkbench = defineStore('workbench', () => {
     initialize,
     refreshSessions,
     loadSession,
+    loadEarlier,
     newChat,
     send,
     cancel,

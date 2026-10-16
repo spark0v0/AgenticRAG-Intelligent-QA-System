@@ -244,11 +244,17 @@ async def delete_session(session_id: str, mode: Mode = 'live'):
 
 
 @router.get("/sessions/{session_id}")
-async def session(session_id: str, mode: Mode = "live"):
+async def session(session_id: str, mode: Mode = "live", limit: int | None = Query(default=None, ge=1, le=50),
+                  before: str | None = Query(default=None, min_length=1, max_length=1024)):
     system = get_system(mode)
     if not await asyncio.to_thread(system.memory.session_summary, session_id):
         raise HTTPException(404, '会话不存在或已删除')
-    return public_data(await asyncio.to_thread(system.get_session_detail, session_id))
+    if before and limit is None:
+        raise HTTPException(422, '历史游标须与每页轮数一起使用')
+    try:
+        return public_data(await asyncio.to_thread(system.get_session_detail, session_id, limit, before))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/visualization/{session_id}")

@@ -13,7 +13,7 @@
 | POST /query | 保持完整 JSON；新增运行标识、结构化来源与元数据。此旧入口不消费客户端 run_id |
 | POST /query/stream | 新增 POST SSE；body 支持 query/session_id/run_id/model_profile/context/images |
 | POST /runs/{run_id}/cancel | 仅取消指定运行；返回 cancelled 及已有运行终态/result，解决完成抢先取消的竞态 |
-| GET /sessions/{id} | messages 中有 id/run_id/result；附带 runs、trace，包含失败和取消运行 |
+| GET /sessions/{id} | 默认返回完整历史；可选 limit=1..50 与 before 游标按轮分页，返回本页 messages/runs/trace 及 history_page.next_cursor |
 | GET /visualization/{id}?run_id=... | 可筛选一次运行的持久化事件 |
 | GET /status | 模型档案含 configured、connection_verified、last_success_at；成功记录来自当前进程的实际回答，不主动探测 |
 | GET /api/runs?search=&status=&offset=0&limit=30 | 分页查询摘要，不返回全部回答；limit 最大 100，返回 items/total |
@@ -24,6 +24,16 @@
 | PUT /api/settings/default-model | body: {profile_id}；影响后续请求默认模型 |
 
 请求 context 只接收 thinking_mode/location/retrieval_mode/strategy/search_scope/knowledge_base_id，不能从浏览器注入 provider、api_key 或 model_config。图片 schema、最大长度、思考模式与模型档案均校验。不支持的参数返回 422；同会话并发/重复运行 ID 返回 409。运行后错误通过 error 事件传达，因为 HTTP 已经是 200。
+
+## 会话历史分页
+
+工作台首次读取 `GET /api/sessions/{id}?limit=20`；之后将 `history_page.next_cursor` 原样传入 `before`，为空表示没有更早记录。每页最多 50 轮，一轮的提问、回答或未完成草稿不会被拆开。省略 limit 保持完整历史接口，Markdown 导出仍使用完整数据。
+
+游标按运行开始时间、记录类别和稳定 ID 排序，绑定会话，避免新问答插入造成 offset 偏移；格式错误或跨会话使用返回 422。分页把失败、取消和旧 JSON 导入记录一起纳入范围，读取在同一 SQLite 快照内完成。本页只读取对应轮次的正文、附件和轨迹；成功运行的 result 不在 runs 中重复返回，完整答案与来源在 assistant 消息的 result 中。
+
+新增 `runs_history_page`、`turns_history_page` 复合索引，通过 `CREATE INDEX IF NOT EXISTS` 自动创建，可重复执行，不改写原始记录。旧记录消息 ID 采用数据库稳定标识，避免同时间戳记录重复。
+
+加载更早消息只合并消息、历史事件和游标，不回写输入草稿、模型、检索范围或运行状态。离开页面或切换会话取消该读取，失败保留游标供手动重试。正在运行的事件仍由 SSE 维护；从运行分析明确跳回历史运行时保留完整会话读取，以确保该轮可见。连续加载全部历史后仍会保留全部已加载消息，未引入虚拟列表。
 
 ## 请求参数快照
 
@@ -83,7 +93,7 @@ SSE 队列有容量限制；客户端过慢会停止该轮，终态事件优先�
 
 Windows secret 使用 DPAPI 用户级加密；其他系统为目录 0700/文件 0600 的本机明文存储。该库不适合作为跨用户凭据备份。保存不改变运行中的配置快照；配置更新使旧的实际生成验证失效。模型列表检测返回前比较连接配置，旧检测不能把新地址/Key 标为连接成功。
 
-保留 `memory/session_memory.py` 旧实现供历史代码参考，RAG 主链已使用 `memory/sqlite_memory.py`。
+`memory.SessionMemory` 与旧路径 `memory.session_memory.SessionMemory` 均导出 `memory/sqlite_memory.py` 的同一实现，不再维护第二套 JSON 写入逻辑。旧模块路径保留兼容，JSON 文件按下面的规则迁移。
 
 - sessions：会话 ID 与创建时间。
 - messages：每轮 user/assistant、run_id 与 payload；保存附件或回答元数据。

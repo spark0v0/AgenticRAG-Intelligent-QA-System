@@ -143,7 +143,7 @@ test('long history fixture: restore, scroll and type without automatic submissio
     const originalFetch = window.fetch
     window.fetch = async (...args) => {
       const response = await originalFetch(...args)
-      if (response.url.endsWith('/api/sessions/performance-fixture')) {
+      if (new URL(response.url).pathname === '/api/sessions/performance-fixture') {
         const parse = response.json.bind(response)
         response.json = async () => {
           const value = await parse()
@@ -184,7 +184,7 @@ test('long history fixture: restore, scroll and type without automatic submissio
       },
     }),
   )
-  await page.route('**/api/sessions/performance-fixture', (route) =>
+  await page.route('**/api/sessions/performance-fixture*', (route) =>
     route.fulfill({
       json: {
         session_id: 'performance-fixture',

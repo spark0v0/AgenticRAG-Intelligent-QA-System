@@ -225,7 +225,7 @@ async function openChat() {
   chatController = controller
   openingChat.value = true
   try {
-    const loaded = await store.loadSession(target.session, controller.signal)
+    const loaded = await store.loadSession(target.session, controller.signal, target.id)
     if (disposed || controller.signal.aborted || route.query.run !== target.id) return
     if (!loaded) {
       detailError.value = store.error || '会话读取失败，请重试'

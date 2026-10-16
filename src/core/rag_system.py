@@ -85,7 +85,9 @@ class AgenticRAGSystem:
             execution.emit("started", {"mode": "live"})
             result = await self._query(user_query, context, execution.session_id)
             result["run_id"] = execution.run_id
-            result["execution_trace"] = self.memory.get_events(execution.session_id, execution.run_id)
+            # SSE has already delivered these events. Only JSON callers need them assembled again.
+            if not execution.streaming and self.enable_visualization:
+                result["execution_trace"] = self.memory.get_events(execution.session_id, execution.run_id)
             result["timing"] = {"first_delta_ms": execution.first_delta_ms,
                                 "total_ms": round((time.perf_counter() - execution.started_clock) * 1000, 2)}
             result["_turn"]["result"]["timing"] = result["timing"]
@@ -179,15 +181,18 @@ class AgenticRAGSystem:
             self._log_execution(session_id, "cancelled", {"status": "cancelled"})
             raise
 
-        session_history = [*self.memory.get_session(session_id), result["_turn"]]
-        result["messages"] = self._build_messages(session_history)
-        result["session_title"] = (self.memory.session_summary(session_id) or {}).get("session_title", self._build_session_title(session_history))
-        result["turn_count"] = len(session_history)
+        summary = self.memory.session_summary(session_id) or {}
+        result["session_title"] = summary.get("session_title") or self._build_session_title([result["_turn"]])
+        result["turn_count"] = summary.get("turn_count", 0) + 1
+        execution = current_execution.get()
+        if execution is None or not execution.streaming:
+            # Preserve the original /query and Runnable response; the workbench receives only this run.
+            session_history = [*self.memory.get_session(session_id), result["_turn"]]
+            result["messages"] = self._build_messages(session_history)
+            result["turn_count"] = len(session_history)
+            result["capabilities"] = self.build_capability_report()
         result["image_count"] = len(images)
         result["model_profile"] = selected_profile["id"]
-        result["capabilities"] = self.build_capability_report()
-        if self.enable_visualization:
-            result["execution_trace"] = self._generate_execution_trace(session_id)
         return result
 
     async def _execute_direct_flow(
@@ -492,7 +497,15 @@ class AgenticRAGSystem:
     def _generate_execution_trace(self, session_id: str) -> List[Dict[str, Any]]:
         return self.memory.get_events(session_id)
 
-    def get_session_detail(self, session_id: str) -> Dict[str, Any]:
+    def get_session_detail(self, session_id: str, limit: int | None = None, before: str | None = None) -> Dict[str, Any]:
+        if limit is not None:
+            page = self.memory.history_page(session_id, limit, before)
+            summary = self.memory.session_summary(session_id) or {}
+            return {
+                "session_id": session_id, "session_title": summary.get("session_title", "新会话"),
+                "turn_count": summary.get("turn_count", 0), "messages": self._build_messages(page.pop("turns")),
+                **page,
+            }
         history = self.memory.get_session(session_id)
         return {
             "session_id": session_id,
@@ -609,7 +622,7 @@ class AgenticRAGSystem:
                 "content": turn.get("query", ""),
                 "timestamp": timestamp,
                 "attachments": turn.get("attachments", []),
-                "id": f"{turn.get('run_id') or timestamp}-user",
+                "id": f"{turn.get('run_id') or turn.get('_history_id') or timestamp}-user",
                 "run_id": turn.get("run_id"),
             }
         )
@@ -618,7 +631,7 @@ class AgenticRAGSystem:
                     "role": "assistant",
                     "content": turn.get("response", ""),
                     "timestamp": timestamp,
-                    "id": f"{turn.get('run_id') or timestamp}-assistant",
+                    "id": f"{turn.get('run_id') or turn.get('_history_id') or timestamp}-assistant",
                     "run_id": turn.get("run_id"),
                     "result": turn.get("result"),
                     "status": "success",

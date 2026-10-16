@@ -9,8 +9,9 @@ import { knowledgeApi } from '../../src/api/knowledge'
 import MarkdownContent from '../../src/components/MarkdownContent.vue'
 import { ActiveRun } from '../../src/chat/activeRun'
 import { createDraftStorage } from '../../src/chat/drafts'
+import { exportConversation } from '../../src/chat/export'
 import type { Conversation } from '../../src/types/chat'
-import type { ExecutionEvent, SystemStatus } from '../../src/types'
+import type { ExecutionEvent, SessionDetail, SystemStatus } from '../../src/types'
 
 const event = (type: string, data: object, seq = 1, run = 'r', session = 's') => ({
   type,
@@ -40,6 +41,43 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 afterEach(() => vi.restoreAllMocks())
+
+it('exports failed and successful rounds in conversation order without repeating questions', () => {
+  let exported: Blob | undefined
+  const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => {
+    exported = blob as Blob
+    return 'blob:export-fixture'
+  })
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+  exportConversation({
+    session_id: 's', session_title: 'ordered', trace: [],
+    messages: [
+      { id: 'success-user', run_id: 'success', role: 'user', content: 'later question', timestamp: 2 },
+      { id: 'success-assistant', run_id: 'success', role: 'assistant', content: 'final answer', timestamp: 2 },
+    ],
+    runs: [
+      { id: 'cancelled', session_id: 's', status: 'cancelled', query: 'earlier question', started_at: 1, result: { answer: 'partial draft', sources: [], session_id: 's' } },
+      { id: 'success', session_id: 's', status: 'success', query: 'later question', started_at: 2 },
+    ],
+  })
+  expect(create).toHaveBeenCalledOnce()
+  return new Promise<void>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const text = String(reader.result)
+        expect(text.indexOf('earlier question')).toBeLessThan(text.indexOf('later question'))
+        expect(text.indexOf('partial draft')).toBeLessThan(text.indexOf('final answer'))
+        expect(text.match(/earlier question/g)).toHaveLength(1)
+        expect(text).toContain('已取消')
+        resolve()
+      } catch (error) { reject(error) }
+    }
+    reader.onerror = reject
+    reader.readAsText(exported!)
+  })
+})
 
 it('stops reading immediately and keeps input locked until cancellation acknowledgement', async () => {
   const store = setupStore()
@@ -267,6 +305,43 @@ it('reports an HTML proxy response without parsing or displaying the page body',
     headers: { 'content-type': 'text/html; charset=utf-8' },
   }))
   await expect(requestJson('/knowledge')).rejects.toThrow('接口未返回 JSON')
+})
+
+it('prepends history without overwriting live state and ignores an aborted older page', async () => {
+  const store = setupStore()
+  const page = (id: string): SessionDetail => ({
+    session_id: 'saved', session_title: 'saved', trace: [], runs: [],
+    messages: [{ id, role: 'user', content: id, timestamp: id === 'latest' ? 2 : 1 }],
+    history_page: { next_cursor: id === 'latest' ? 'cursor' : null },
+  })
+  const read = vi.spyOn(api, 'session').mockResolvedValue(page('latest'))
+  await store.loadSession('saved')
+  expect(read.mock.calls[0]?.[2]).toEqual({ limit: 20 })
+  const conversation = store.current!
+  conversation.draft = 'keep editing'
+  conversation.knowledgeBaseId = 'selected-kb'
+  conversation.activeRun = 'live'
+  conversation.status = 'streaming'
+  read.mockRejectedValueOnce(new Error('temporary failure'))
+  expect(await store.loadEarlier()).toBe(false)
+  expect(conversation.historyError).toBe('temporary failure')
+  expect(conversation.historyCursor).toBe('cursor')
+  let resolve!: (value: SessionDetail) => void
+  read.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+  const pending = store.loadEarlier()
+  expect(await store.loadEarlier()).toBe(false)
+  store.newChat()
+  resolve(page('stale'))
+  expect(await pending).toBe(false)
+  expect(conversation.messages.map(m => m.id)).toEqual(['latest'])
+  await store.loadSession('saved')
+  read.mockResolvedValue({ ...page('older'), messages: [...page('older').messages, ...page('latest').messages],
+    trace: [event('started', { mode: 'live' }, 1, 'live', 'saved') as ExecutionEvent] })
+  expect(await store.loadEarlier()).toBe(true)
+  expect(conversation.messages.map(m => m.id)).toEqual(['older', 'latest'])
+  expect(conversation.events).toEqual([]) // The active stream owns its event sequence.
+  expect(conversation).toMatchObject({ draft: 'keep editing', knowledgeBaseId: 'selected-kb', activeRun: 'live', status: 'streaming', historyCursor: null, loadingHistory: false })
+  store.dispose()
 })
 
 it.each(['cancelled', 'error'] as const)('restores a first %s run snapshot and retries the selected conversation only', async (status) => {

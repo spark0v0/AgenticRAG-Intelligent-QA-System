@@ -22,6 +22,9 @@ def build_system(tmp_path):
 
 
 def test_legacy_migration_is_repeatable_and_non_destructive(tmp_path):
+    from memory import SessionMemory as PublicMemory
+    from memory.session_memory import SessionMemory as CompatibleMemory
+    assert PublicMemory is CompatibleMemory is SessionMemory
     path = tmp_path / "sessions.json"
     original = json.dumps({"legacy": [{"query": "old", "response": "answer", "timestamp": 1}]})
     path.write_text(original, encoding="utf-8")
@@ -31,6 +34,39 @@ def test_legacy_migration_is_repeatable_and_non_destructive(tmp_path):
     assert path.read_text(encoding="utf-8") == original
     with memory.connect() as db:
         assert db.execute("SELECT count(*) FROM messages").fetchone()[0] == 2
+
+
+def test_stream_completion_avoids_full_history_reads_and_keeps_json_compatibility(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    monkeypatch.setattr('models.client.AsyncOpenAI', fixture_client)
+    async def scenario():
+        system = build_system(tmp_path)
+        for index in range(25):
+            system.memory.append_turn('long', {'query': f'old-{index}', 'response': 'fixture ' * 1000,
+                                              'timestamp': index + 1})
+        get_session = Mock(wraps=system.memory.get_session)
+        get_events = Mock(wraps=system.memory.get_events)
+        monkeypatch.setattr(system.memory, 'get_session', get_session)
+        monkeypatch.setattr(system.memory, 'get_events', get_events)
+        events = []
+        execution, task = system.start_query('你好', session_id='long', listener=events.append)
+        result = await task
+        assert get_session.call_count == 0, 'Streaming completion must not reload all prior turns'
+        assert get_events.call_count == 0, 'Already delivered events must not be reloaded for SSE completion'
+        assert result['turn_count'] == 26
+        assert not {'messages', 'execution_trace', 'capabilities'} & result.keys()
+        assert events[-1]['type'] == 'completed'
+        assert events[-1]['data']['result']['answer'] == result['answer']
+        detail = system.get_session_detail('long')
+        assert len(detail['messages']) == 52 and detail['trace']
+        assert detail['runs'][-1]['id'] == execution.run_id
+        assert detail['messages'][-1]['content'] == result['answer']
+        # Existing non-streaming callers still receive the complete conversation and run trace.
+        legacy = await system.query('你好', session_id='long')
+        assert legacy['turn_count'] == 27 and len(legacy['messages']) == 54
+        assert legacy['execution_trace'] and legacy['capabilities']
+        assert legacy['messages'][-1]['content'] == legacy['answer']
+    asyncio.run(scenario())
 
 
 def test_cancel_first_run_then_retry_and_persist_final_metadata(tmp_path, monkeypatch):

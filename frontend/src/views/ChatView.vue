@@ -52,12 +52,55 @@ const { following, onScroll, toBottom } = useAutoScroll(
   () => contentKey.value,
   () => !!store.current?.messages.length,
 )
+const historyRequest = ref(false)
+const historyAnnouncement = ref('')
+let historyVersion = 0
+let historySession = ''
+const viewController = new AbortController()
+onUnmounted(() => viewController.abort())
+// Capture the visible message before Vue patches the prepended page. This also respects
+// scrolling while the request is in flight and avoids counting new streamed text below it.
+watch(
+  () => store.current?.messages[0]?.id,
+  async (_id, previous) => {
+    if (!historyRequest.value || historySession !== store.currentId || !previous || !scroller.value)
+      return
+    const session = store.currentId
+    const container = scroller.value
+    const edge = container.getBoundingClientRect().top
+    const anchor = [...container.querySelectorAll<HTMLElement>('[data-message-id]')].find(
+      (element) => element.getBoundingClientRect().bottom > edge,
+    )
+    const top = anchor?.getBoundingClientRect().top
+    await nextTick()
+    if (store.currentId === session && anchor?.isConnected && top !== undefined)
+      container.scrollTop += anchor.getBoundingClientRect().top - top
+  },
+)
+async function loadEarlier() {
+  if (historyRequest.value) return
+  const session = store.currentId
+  historySession = session
+  const version = ++historyVersion
+  const count = store.current?.messages.length ?? 0
+  following.value = false
+  historyRequest.value = true
+  const loaded = await store.loadEarlier(viewController.signal)
+  await nextTick()
+  if (version !== historyVersion) return
+  if (loaded && store.currentId === session)
+    historyAnnouncement.value = `已加载 ${Math.max(0, (store.current?.messages.length ?? count) - count)} 条更早消息`
+  historyRequest.value = false
+}
 watch(
   () => store.currentId,
   async () => {
     showPanel.value = false
     panelTrigger = undefined
     evidenceRequest.value = undefined
+    historyAnnouncement.value = ''
+    historyVersion++
+    historyRequest.value = false
     following.value = true
     await nextTick()
     if (store.current?.messages.length) await toBottom()
@@ -159,10 +202,31 @@ function choosePrompt(text: string) {
           </div>
         </div>
         <div v-else class="messages">
+          <div v-if="store.current.historyCursor || historyAnnouncement" class="history-loader">
+            <button
+              class="secondary-button"
+              :aria-disabled="!!store.current.loadingHistory || !store.current.historyCursor"
+              :aria-busy="!!store.current.loadingHistory"
+              @click="loadEarlier"
+            >
+              {{
+                !store.current.historyCursor
+                  ? '已加载全部历史'
+                  : store.current.loadingHistory
+                    ? '正在加载更早消息…'
+                    : store.current.historyError
+                      ? '重试加载更早消息'
+                      : '加载更早消息'
+              }}
+            </button>
+            <p v-if="store.current.historyError" role="alert">{{ store.current.historyError }}</p>
+            <span v-else role="status">{{ historyAnnouncement || '上方还有更早的对话' }}</span>
+          </div>
           <MessageBubble
             v-for="message in store.current.messages"
             :key="message.id"
             :message="message"
+            :data-message-id="message.id"
             :selected="store.selectedRun === message.run_id"
             @inspect="inspect"
           />

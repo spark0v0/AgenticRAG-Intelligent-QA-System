@@ -57,6 +57,7 @@ export function restoreConversation(detail: SessionDetail): Conversation {
     title: detail.session_title,
     messages,
     events: detail.trace,
+    historyCursor: detail.history_page?.next_cursor,
     knowledgeBaseId: request?.knowledge_base_id ?? legacy?.knowledge_base_id,
     searchScope:
       request?.search_scope ?? (isScope(legacy?.search_scope) ? legacy.search_scope : 'auto'),
@@ -76,4 +77,19 @@ export function restoreConversation(detail: SessionDetail): Conversation {
         : undefined
       : '旧会话未记录完整请求选项，已参考历史回答恢复检索范围；发送前请确认知识库、模式与模型。',
   }
+}
+
+// Only prepend history. The current run, draft and editable options belong to the live store.
+export function prependHistory(conversation: Conversation, detail: SessionDetail) {
+  const older = restoreConversation(detail)
+  const messages = new Set(conversation.messages.map((message) => message.id))
+  const events = new Set(conversation.events.map((event) => `${event.run_id}:${event.seq}`))
+  conversation.messages.unshift(...older.messages.filter((message) => !messages.has(message.id)))
+  conversation.events.unshift(
+    ...older.events.filter(
+      (event) =>
+        event.run_id !== conversation.activeRun && !events.has(`${event.run_id}:${event.seq}`),
+    ),
+  )
+  conversation.historyCursor = older.historyCursor
 }

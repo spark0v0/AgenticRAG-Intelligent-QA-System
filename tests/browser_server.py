@@ -1,5 +1,6 @@
 """Disposable API process for Playwright. No credentials or real histories are loaded."""
 import sys
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -22,4 +23,7 @@ if __name__ == "__main__":
         knowledge_service._service = knowledge_service.KnowledgeService(Path(directory) / "knowledge")
         providers._store = ProviderStore(Path(directory) / "settings" / "providers.sqlite3")
         systems["live"] = AgenticRAGSystem(fixture_config(Path(directory)))
+        if os.environ.get('WORKBENCH_HISTORY_FIXTURE') == '1':
+            from history_fixture import seed_history
+            seed_history(systems['live'].memory)
         uvicorn.run(app, host="127.0.0.1", port=8010)

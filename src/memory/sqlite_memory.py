@@ -1,7 +1,9 @@
 """Transactional history with non-destructive, idempotent legacy JSON import."""
 from __future__ import annotations
 import hashlib
+import base64
 import json
+import math
 import sqlite3
 import time
 import uuid
@@ -29,6 +31,8 @@ class SessionMemory:
                     result TEXT, error TEXT
                 );
                 CREATE INDEX IF NOT EXISTS runs_session ON runs(session_id, started_at);
+                CREATE INDEX IF NOT EXISTS runs_history_page ON runs(session_id, started_at, id);
+                CREATE INDEX IF NOT EXISTS turns_history_page ON turns(session_id, timestamp, id);
                 CREATE UNIQUE INDEX IF NOT EXISTS one_active_run ON runs(session_id) WHERE status='running';
                 CREATE TABLE IF NOT EXISTS events (
                     run_id TEXT NOT NULL, seq INTEGER NOT NULL, payload TEXT NOT NULL,
@@ -136,11 +140,71 @@ class SessionMemory:
 
     def get_session(self, session_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:
-            rows = db.execute("SELECT payload FROM turns WHERE session_id=? ORDER BY timestamp, rowid", (session_id,))
-            return [json.loads(row[0]) for row in rows]
+            rows = db.execute("SELECT id,payload FROM turns WHERE session_id=? ORDER BY timestamp, id", (session_id,))
+            return [{**json.loads(row['payload']), '_history_id': row['id']} for row in rows]
 
     def list_sessions(self) -> list[dict[str, Any]]:
         return self.search_sessions("", 0, None)["items"]
+
+    def history_page(self, session_id: str, limit: int = 20, before: str | None = None) -> dict:
+        """Page whole rounds, including failed runs and legacy turns, in one read snapshot."""
+        if not 1 <= limit <= 50:
+            raise ValueError("每页须为 1–50 轮")
+        cursor = None
+        if before:
+            try:
+                owner, stamp, kind, identity = json.loads(base64.urlsafe_b64decode(before.encode('ascii')))
+                if (owner != session_id or type(stamp) not in (int, float) or not math.isfinite(stamp)
+                        or type(kind) is not int or kind not in (0, 1)
+                        or not isinstance(identity, str) or not 1 <= len(identity) <= 128):
+                    raise ValueError()
+                cursor = (stamp, kind, identity)
+            except (ValueError, TypeError, UnicodeError) as exc:
+                raise ValueError("历史分页游标无效，请重新打开会话") from exc
+        with self.connect() as db:
+            db.execute('BEGIN')
+            # Only metadata is scanned; answers, attachments and events are read for this page.
+            run_before = 'AND (started_at,1,id)<(?,?,?)' if cursor else ''
+            turn_before = 'AND (timestamp,0,id)<(?,?,?)' if cursor else ''
+            params = (session_id, *(cursor or ()), session_id, *(cursor or ()), limit + 1)
+            rows = db.execute(f"""SELECT id,started_at AS stamp,1 AS kind FROM runs
+                WHERE session_id=? {run_before}
+                UNION ALL SELECT t.id,t.timestamp,0 FROM turns t WHERE session_id=? {turn_before}
+                AND NOT EXISTS(SELECT 1 FROM runs r WHERE r.id=t.id)
+                ORDER BY stamp DESC,kind DESC,id DESC LIMIT ?""", params).fetchall()
+            has_more = len(rows) > limit
+            rows = rows[:limit]
+            turns, runs, events = [], [], []
+            ids = [row['id'] for row in rows]
+            if ids:
+                placeholders = ','.join('?' for _ in ids)
+                payloads = {row['id']: json.loads(row['payload']) for row in db.execute(
+                    f'SELECT id,payload FROM turns WHERE session_id=? AND id IN ({placeholders})', (session_id, *ids))}
+                run_rows = {row['id']: dict(row) for row in db.execute(
+                    f'SELECT * FROM runs WHERE session_id=? AND id IN ({placeholders})', (session_id, *ids))}
+                inputs = {row['run_id']: json.loads(row['payload']) for row in db.execute(
+                    f"SELECT run_id,payload FROM messages WHERE session_id=? AND role='user' AND run_id IN ({placeholders})",
+                    (session_id, *ids))}
+                events = [json.loads(row[0]) for row in db.execute(f"""SELECT e.payload FROM events e
+                    JOIN runs r ON r.id=e.run_id WHERE r.session_id=? AND r.id IN ({placeholders})
+                    ORDER BY r.started_at,r.id,e.seq""", (session_id, *ids))]
+                for row in reversed(rows):
+                    identity = row['id']
+                    if identity in payloads:
+                        turns.append({**payloads[identity], 'timestamp': row['stamp'], '_history_id': identity})
+                    if identity in run_rows:
+                        run = run_rows[identity]
+                        # Successful answer metadata is already on its message, not duplicated here.
+                        run['result'] = json.loads(run['result']) if run['result'] and run['status'] != 'success' else None
+                        run['request'] = json.loads(run['request']) if run['request'] else None
+                        run['attachments'] = inputs.get(identity, {}).get('attachments', []) if run['status'] != 'success' else []
+                        runs.append(run)
+            next_cursor = None
+            if has_more:
+                oldest = rows[-1]
+                next_cursor = base64.urlsafe_b64encode(json.dumps(
+                    [session_id, oldest['stamp'], oldest['kind'], oldest['id']], separators=(',', ':')).encode()).decode()
+        return {'turns': turns, 'runs': runs, 'trace': events, 'history_page': {'next_cursor': next_cursor}}
 
     def search_sessions(self, search: str = "", offset: int = 0, limit: int | None = 30) -> dict:
         where = "WHERE (?='' OR instr(lower(session_title || ' ' || preview),lower(?))>0)"

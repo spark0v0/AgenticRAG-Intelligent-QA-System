@@ -17,4 +17,7 @@ export interface Conversation {
   images: ImageAttachment[]
   error?: string
   restoreNotice?: string
+  historyCursor?: string | null
+  loadingHistory?: boolean
+  historyError?: string
 }

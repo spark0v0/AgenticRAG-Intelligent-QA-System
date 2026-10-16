@@ -109,8 +109,12 @@ export const api = {
       headers: { 'X-Workbench-Request': '1' },
       signal,
     }),
-  session: (id: string, signal?: AbortSignal) =>
-    requestJson<SessionDetail>(`/sessions/${encodeURIComponent(id)}`, { signal }),
+  session: (id: string, signal?: AbortSignal, page?: { limit: number; before?: string }) => {
+    const query = page
+      ? `?${new URLSearchParams({ limit: String(page.limit), ...(page.before ? { before: page.before } : {}) })}`
+      : ''
+    return requestJson<SessionDetail>(`/sessions/${encodeURIComponent(id)}${query}`, { signal })
+  },
   cancel: (id: string, signal?: AbortSignal) =>
     requestJson<{ cancelled: boolean; run?: Pick<RunRecord, 'status' | 'result' | 'error'> }>(
       `/runs/${encodeURIComponent(id)}/cancel`,

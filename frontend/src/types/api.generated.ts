@@ -195,6 +195,8 @@ export interface operations {
     parameters: {
       query?: {
         mode?: 'live'
+        limit?: number | null
+        before?: string | null
       }
       header?: never
       path: {
