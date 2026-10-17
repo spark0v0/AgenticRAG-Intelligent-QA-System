@@ -1,10 +1,15 @@
 {
-  "date": "2026-09-17T18:53:09.918Z",
+  "date": "2026-10-16T18:32:42.626Z",
   "newModelRequest": false,
   "errors": [],
   "viewports": [
     {
       "path": "chat",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "knowledge",
       "width": 1440,
       "overflow": false
     },
@@ -20,6 +25,11 @@
     },
     {
       "path": "chat",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "knowledge",
       "width": 390,
       "overflow": false
     },

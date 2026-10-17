@@ -13,7 +13,7 @@ page.on('console', (message) => {
 })
 const metrics = { date: new Date().toISOString(), newModelRequest: false, errors, viewports: [] }
 try {
-  for (const path of ['settings/providers', 'sessions', 'runs']) {
+  for (const path of ['settings/providers', 'sessions', 'runs', 'knowledge']) {
     const response = await page.request.get(`${baseURL}/api/${path}`)
     expect(response.ok()).toBe(true)
     expect((await response.json()).items.length, 'Capture requires an empty workspace').toBe(0)
@@ -23,10 +23,11 @@ try {
   mkdirSync(output, { recursive: true })
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
-    for (const path of ['chat', 'providers', 'runs']) {
+    for (const path of ['chat', 'knowledge', 'providers', 'runs']) {
       await page.goto(`${baseURL}/${path}`)
       await expect(page.locator('.connection-line')).toHaveCount(0)
       if (path === 'chat') await expect(page.getByRole('link', { name: '配置可用模型' })).toBeVisible()
+      if (path === 'knowledge') await expect(page.getByRole('heading', { name: '让资料成为可追溯的答案' })).toBeVisible()
       if (path === 'providers') {
         await expect(page.getByRole('heading', { name: '连接第一个模型供应商' })).toBeVisible()
         await page.getByRole('button', { name: '添加供应商' }).first().click()
@@ -35,14 +36,15 @@ try {
         await expect(page.getByRole('dialog')).toBeHidden()
       }
       if (path === 'runs') await expect(page.getByRole('heading', { name: '运行分析' })).toBeVisible()
+      await page.evaluate(() => document.fonts.ready)
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
       expect(overflow).toBe(false)
       metrics.viewports.push({ path, width: viewport.width, overflow })
-      await page.screenshot({ path: `${output}/clean-${path}-${viewport.width}.png`, animations: 'disabled' })
+      await page.screenshot({ path: `${output}/workbench-${path}-${viewport.width}.png`, animations: 'disabled' })
     }
   }
   expect(errors).toEqual([])
-  writeFileSync(`${output}/clean-metrics.json`, JSON.stringify(metrics, null, 2))
+  writeFileSync(`${output}/workbench-metrics.json`, JSON.stringify(metrics, null, 2))
   console.log(JSON.stringify(metrics, null, 2))
 } finally {
   await browser.close()

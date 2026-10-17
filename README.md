@@ -2,7 +2,9 @@
 
 基于 Vue 3 与 FastAPI 的智能问答工作台。通过 Router（路由）、Planner（规划）、Retriever（检索）、Generator（生成）、Critic（评审）五类智能体按需协作，结合本地知识库与联网资料生成带引用的回答，让检索依据和执行过程可查看、可追溯。
 
-![问答工作台](docs/screenshots/clean-chat-1440.png)
+![问答工作台：当前桌面界面](docs/screenshots/workbench-chat-1440.png)
+
+[查看更多界面与窄屏布局](docs/screenshots/README.md)
 
 ## 主要能力
 
