@@ -54,7 +54,9 @@ defineProps<{ stage: StageEvent; tools: ToolEvent[] }>()
       <span class="tiny-label">节点期间的工具调用</span>
       <details v-for="tool in tools" :key="tool.data.call_id" class="tool-call">
         <summary>
-          <AppIcon name="tool" :size="15" /><strong>{{ tool.data.tool }}</strong
+          <AppIcon name="tool" :size="15" /><strong>{{
+            tool.data.display_name || tool.data.tool
+          }}</strong
           ><span>{{ runLabels[tool.data.status] || tool.data.status }}</span>
         </summary>
         <small>{{ tool.data.protocol }} · {{ durationLabel(tool.data.duration_ms) }}</small>

@@ -32,9 +32,9 @@ Vue 工作台通过 FastAPI 访问会话、模型配置、知识库与运行分�
 
 ## 工具扩展
 
-ToolRegistry 负责工具注册、Pydantic 参数校验、超时和标准化 ToolResult。默认策略根据意图和显式范围选工具，可配置模型 Function Calling 选择；当前适配提取工具名称，由后端构造参数，不是通用的循环工具对话框架。
+ToolRegistry 负责工具注册、Pydantic / JSON Schema 参数校验、超时和标准化 ToolResult。默认按意图及显式范围选择内置工具；启用外部 MCP 工具后，自动范围的检索路径使用 Function Calling 选择工具并保留其 arguments。动态工具直接使用经过校验的模型参数，内置工具保留已有参数适配；这不是通用的循环工具对话框架。
 
-MCP 示例通过本地 stdio 客户端调用示例服务。LangChain Runnable 与 Dify 工具包装位于 `src/integrations/`；外部平台集成需分别验证协议、依赖与配置。
+MCP 使用官方 Python SDK，支持 stdio 与 Streamable HTTP。工具中心保存连接配置与发现的 schema，用户选择已声明只读的工具后注册进执行层。配置 revision 校验阻止编辑或停用后继续使用旧 handler；每次操作持有独立连接，超时、断连与取消退出 SDK 上下文。历史事件继续保留已发生的结果。详见 [工具接入](tools.md)。LangChain Runnable 与 Dify 包装位于 `src/integrations/`。
 
 ## 运行与事件
 

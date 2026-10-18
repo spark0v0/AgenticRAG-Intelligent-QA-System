@@ -13,6 +13,7 @@
 - **本地知识库**：上传 TXT、Markdown、文本型 PDF，查看索引状态并重试失败任务；支持关键词、BGE 语义及混合检索，并排比较三路结果。
 - **联网与证据**：接入 Tavily，可与本地资料组合检索；回答引用关联原文片段，PDF 支持站内阅读、翻页、缩放和引用页定位。
 - **执行分析**：展示实际经过的智能体节点、检索轮次、工具调用和耗时，支持历史运行回看。界面提供明暗主题与窄屏布局。
+- **工具接入**：配置 stdio / Streamable HTTP MCP 服务，连接发现工具、校验参数、试运行并选择只读工具用于问答。
 
 ## 技术栈
 
@@ -20,7 +21,7 @@
 | --- | --- |
 | 前端工程 | Vue 3、TypeScript、Vite、Pinia、Vue Router |
 | 界面与阅读 | Element Plus、SCSS、markdown-it、DOMPurify、highlight.js、PDF.js |
-| 通信与后端 | Fetch / SSE、AbortController、FastAPI、Pydantic、HTTPX |
+| 通信与后端 | Fetch / SSE、AbortController、FastAPI、Pydantic、HTTPX、MCP Python SDK |
 | 检索与存储 | FastEmbed / BGE、ChromaDB、BM25、RRF、Tavily、SQLite |
 | 工程检查 | openapi-typescript、ESLint、Prettier、Vitest、Playwright、pytest、GitHub Actions |
 
@@ -82,6 +83,12 @@ TAVILY_API_KEY=your_tavily_api_key
 
 未指定搜索服务且没有 Tavily Key 时，使用覆盖有限的 Wikipedia / DuckDuckGo 即时答案接口；显式选择 Tavily 但缺少 Key 会报错。
 
+### 外部查询工具
+
+在「工具中心」添加 MCP 服务 → 连接并发现 → 选择只读工具 → 试运行 → 应用到问答。支持本地 stdio 程序及 Streamable HTTP；密钥只在后端环境变量中配置，页面填写变量名。
+
+启用的工具用于「自动」范围的检索问答，需要支持 Function Calling 的模型。明确选择知识库或联网范围时保持原有检索边界。连接验证不调用业务工具，试运行会实际执行一次查询。配置、限制与接口见 [工具接入说明](docs/tools.md)。
+
 ## 本地开发
 
 保持后端运行，在另一个终端启动 Vite：
@@ -121,7 +128,7 @@ tests/         后端检查与隔离夹具
 - SQLite 保存会话、运行和业务状态，ChromaDB 保存检索向量；原文与模型缓存在 `data/knowledge/`。凭据仅留后端，`.env`、数据目录和测试产物不提交 Git；备份前先停止服务。
 - 用户知识库可使用 BGE 语义嵌入；未选知识库时，旧版项目资料检索使用 BM25 与哈希向量。Critic 检查引用结构，不保证逐句事实正确。
 - 停止生成会取消后续执行并关闭支持取消的连接；同步工具可能执行至检查点或超时。完整导出及跳转指定历史运行仍可能读取整段会话。
-- Function Calling 为可选工具选择适配；MCP 提供本地示例，Dify 提供工具封装，尚未发布完整插件。
+- MCP 外部工具使用模型生成参数与 JSON Schema 校验，当前仅支持声明只读的查询工具；不提供写操作、OAuth 授权流程或通用循环工具对话。Dify 提供工具封装，尚未发布完整插件。
 
 ## 更多文档
 

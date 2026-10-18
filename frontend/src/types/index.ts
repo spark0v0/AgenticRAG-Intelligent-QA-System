@@ -28,6 +28,7 @@ export interface Source {
   end?: number
   original_available?: boolean
   citation_id: string
+  title?: string
   source: string
   score?: number
   excerpt?: string
@@ -169,6 +170,7 @@ export type EventPayloads = {
   tool: {
     call_id: string
     tool: string
+    display_name?: string
     status: string
     protocol: string
     input: Record<string, Json>

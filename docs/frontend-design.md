@@ -42,7 +42,9 @@ frontend/src/
   components/MarkdownContent.vue  安全 Markdown、代码高亮与复制
   components/ExecutionPanel.vue  按运行聚合节点、来源与工具调用
   views/ChatView.vue            问答布局、详情展开、滚动容器
-  views/ToolsView.vue           只读工具 schema 与筛选
+  views/ToolsView.vue           内置工具筛选与 MCP 服务入口
+  components/tools/            服务配置、发现、选择与试运行
+  composables/useTools.ts       服务数据、请求竞态与离页清理
   views/SystemView.vue          只读模型能力和环境信息
   components/providers/ProviderForm.vue  表单草稿、校验、保存与密钥清理
   components/providers/ProviderModelEditor.vue  模型字段、能力开关和移除事件

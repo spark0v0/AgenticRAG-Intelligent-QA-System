@@ -442,7 +442,7 @@ function refresh() {
               rel="noopener noreferrer"
               >{{ sourceLabel(source.source) }}<AppIcon name="external" :size="13"
             /></a>
-            <h3 v-else>{{ sourceLabel(source.source) }}</h3>
+            <h3 v-else>{{ source.title || sourceLabel(source.source) }}</h3>
             <p>{{ source.excerpt || '此来源未保存证据片段。' }}</p>
             <EvidenceButton :source="source" />
           </article>

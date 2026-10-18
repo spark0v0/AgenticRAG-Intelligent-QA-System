@@ -1,9 +1,8 @@
 ﻿from __future__ import annotations
 
-import json
 import re
-import sys
 from typing import Any, Dict, List
+from pydantic import BaseModel
 
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]{1,8}", re.UNICODE)
@@ -27,7 +26,7 @@ CAPABILITY_DOCS = [
     },
     {
         "source": "mcp://capabilities/trace-memory",
-        "content": "系统支持会话短期记忆、执行轨迹记录、来源追踪和需求符合度审计，可用于中期检查展示。",
+        "content": "系统支持会话短期记忆、执行轨迹记录、来源追踪与历史运行回看。",
         "metadata": {"topic": "trace_memory", "protocol": "mcp"},
     },
 ]
@@ -35,65 +34,6 @@ CAPABILITY_DOCS = [
 
 def tokenize(text: str) -> List[str]:
     return [token.lower() for token in TOKEN_RE.findall(text or "")]
-
-
-def make_response(message_id: int | None, result: Dict[str, Any]) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"jsonrpc": "2.0", "result": result}
-    if message_id is not None:
-        payload["id"] = message_id
-    return payload
-
-
-def make_error(message_id: int | None, message: str) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"jsonrpc": "2.0", "error": {"code": -32000, "message": message}}
-    if message_id is not None:
-        payload["id"] = message_id
-    return payload
-
-
-def write_message(payload: Dict[str, Any]) -> None:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-    sys.stdout.buffer.write(header + body)
-    sys.stdout.buffer.flush()
-
-
-def read_message() -> Dict[str, Any] | None:
-    headers: Dict[str, str] = {}
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None
-        stripped = line.decode("utf-8").strip()
-        if not stripped:
-            break
-        name, _, value = stripped.partition(":")
-        headers[name.lower()] = value.strip()
-
-    content_length = int(headers.get("content-length", "0"))
-    if content_length <= 0:
-        return None
-    body = sys.stdin.buffer.read(content_length)
-    return json.loads(body.decode("utf-8"))
-
-
-def list_tools() -> Dict[str, Any]:
-    return {
-        "tools": [
-            {
-                "name": "project_capability_lookup",
-                "description": "检索 AgenticRAG 项目的能力说明、协议支持和系统特性。",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "用户想了解的系统能力问题。"},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 5},
-                    },
-                    "required": ["query"],
-                },
-            }
-        ]
-    }
 
 
 def call_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -131,38 +71,21 @@ def call_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def main() -> None:
-    while True:
-        message = read_message()
-        if message is None:
-            return
-        method = message.get("method")
-        message_id = message.get("id")
-        params = message.get("params") or {}
+class CapabilityResult(BaseModel):
+    documents: List[Dict[str, Any]]
 
-        try:
-            if method == "initialize":
-                write_message(
-                    make_response(
-                        message_id,
-                        {
-                            "protocolVersion": "2024-11-05",
-                            "serverInfo": {"name": "agenticrag-mock-mcp-server", "version": "1.0.0"},
-                            "capabilities": {"tools": {}},
-                        },
-                    )
-                )
-            elif method == "tools/list":
-                write_message(make_response(message_id, list_tools()))
-            elif method == "tools/call":
-                result = call_tool(str(params.get("name", "")), params.get("arguments") or {})
-                write_message(make_response(message_id, result))
-            elif method == "notifications/initialized":
-                continue
-            else:
-                write_message(make_error(message_id, f"Unsupported method: {method}"))
-        except Exception as exc:
-            write_message(make_error(message_id, str(exc)))
+
+def main() -> None:
+    from mcp.server import MCPServer
+    from mcp_types import ToolAnnotations
+    server = MCPServer("agenticrag-capability-example")
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True), structured_output=True)
+    def project_capability_lookup(query: str, limit: int = 3) -> CapabilityResult:
+        """查询项目预置能力说明（示例数据，不验证系统实际能力）。"""
+        return CapabilityResult(**call_tool("project_capability_lookup", {"query": query, "limit": limit})["structuredContent"])
+
+    server.run(transport="stdio")
 
 
 if __name__ == "__main__":

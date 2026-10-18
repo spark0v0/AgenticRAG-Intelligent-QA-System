@@ -16,12 +16,15 @@ from api.workbench import systems
 from api import providers
 from core.rag_system import AgenticRAGSystem
 from memory.provider_store import ProviderStore
+from tools import managed
+from tools.settings import ToolSettingsStore
 from knowledge import service as knowledge_service
 
 
 if __name__ == '__main__':
     with TemporaryDirectory(prefix='agenticrag-screenshots-') as directory:
         temporary = Path(directory)
+        managed._store = ToolSettingsStore(temporary / 'tools.sqlite3')
         corpus = temporary / 'empty-corpus'
         corpus.mkdir()
         providers._store = ProviderStore(temporary / 'providers.sqlite3')

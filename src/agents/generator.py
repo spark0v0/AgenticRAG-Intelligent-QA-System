@@ -341,7 +341,7 @@ class Generator(BaseAgent):
             citation = citations.setdefault(identity, f"S{len(citations) + 1}")
             source_map.append(
                 {
-                    **{key: metadata[key] for key in ("kind", "knowledge_base_id", "document_id", "chunk_id", "version", "document_name", "page", "heading", "start", "end", "original_available") if key in metadata},
+                    **{key: metadata[key] for key in ("kind", "title", "knowledge_base_id", "document_id", "chunk_id", "version", "document_name", "page", "heading", "start", "end", "original_available") if key in metadata},
                     "citation_id": citation,
                     "source": doc.get("source", "unknown"),
                     "score": doc.get("score", 0.0),

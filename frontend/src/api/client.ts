@@ -31,6 +31,11 @@ const safeValidationMessages = new Set([
   '地址必须是无凭据、查询参数的 HTTP(S) 服务地址',
   '远程供应商必须使用 HTTPS，本机服务可使用 HTTP',
   '同一供应商中模型 ID 不可重复',
+  '字段不能包含控制字符',
+  '请填写服务名称',
+  '凭据仅填写后端环境变量名',
+  '启动参数无效',
+  '请填写可执行程序路径',
 ])
 export async function checked(response: Response): Promise<Response> {
   if (response.ok) return response

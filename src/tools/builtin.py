@@ -418,7 +418,7 @@ def build_builtin_tools(config: Dict[str, Any]) -> List[ToolSpec]:
         ),
         ToolSpec(
             name="project_capability_lookup",
-            description="Query the MCP capability server for information about supported protocols and system features.",
+            description="查询预置的项目能力说明（本地 MCP 示例，不代表实际运行验证）。",
             handler=capability_lookup,
             input_model=CapabilityLookupInput,
             tags=["retrieval", "mcp", "capability"],

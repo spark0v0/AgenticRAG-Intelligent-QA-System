@@ -1,122 +1,76 @@
-﻿from __future__ import annotations
-
-import asyncio
-import json
-import subprocess
-from typing import Any, Dict, List
+"""Bounded SDK sessions; every operation owns and closes its transport."""
+from __future__ import annotations
+import os
+from contextlib import asynccontextmanager
+import anyio
+import httpx2
+from mcp import Client
+from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client
+from utils.execution import register_secret
 
 
 class MCPClientError(RuntimeError):
     pass
 
 
-class StdioMCPClient:
-    def __init__(self, command: List[str], cwd: str | None = None):
-        self.command = command
-        self.cwd = cwd
-        self._request_id = 0
+class MCPConnection:
+    def __init__(self, settings: dict):
+        self.settings = settings
 
-    async def start(self) -> None:
-        return None
+    @asynccontextmanager
+    async def connect(self):
+        cfg = self.settings
+        with anyio.fail_after(cfg.get('timeout_seconds', 15)):
+            if cfg['transport'] == 'stdio':
+                env = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+                for name in cfg.get('env_names', []):
+                    if name not in os.environ:
+                        raise MCPClientError('所需后端环境变量未配置')
+                    env[name] = os.environ[name]
+                    register_secret(env[name])
+                params = StdioServerParameters(command=cfg['command'], args=cfg.get('args', []), cwd=cfg.get('cwd'), env=env)
+                # Server stderr may contain credentials. Never forward it to app logs.
+                with open(os.devnull, 'w') as errlog:
+                    async with Client(stdio_client(params, errlog=errlog), cache=None) as client:
+                        yield client
+            else:
+                headers = {}
+                if name := cfg.get('token_env'):
+                    token = os.environ.get(name)
+                    if not token:
+                        raise MCPClientError('所需后端环境变量未配置')
+                    register_secret(token)
+                    headers['Authorization'] = f'Bearer {token}'
+                async with httpx2.AsyncClient(headers=headers, timeout=cfg.get('timeout_seconds', 15), follow_redirects=False) as http:
+                    async with Client(streamable_http_client(cfg['url'], http_client=http), cache=None) as client:
+                        yield client
 
-    async def list_tools(self) -> List[Dict[str, Any]]:
-        response = await asyncio.to_thread(self._run_request, "tools/list", {})
-        return response.get("tools", [])
+    async def list_tools(self):
+        async with self.connect() as client:
+            tools, cursor, seen = [], None, set()
+            for _ in range(10):
+                page = await client.list_tools(cursor=cursor)
+                tools.extend(tool.model_dump(by_alias=True, exclude_none=True) for tool in page.tools)
+                if len(tools) > 80:
+                    raise MCPClientError('服务工具超过 80 个，请拆分服务范围')
+                cursor = page.next_cursor
+                if not cursor:
+                    return tools
+                if cursor in seen:
+                    break
+                seen.add(cursor)
+            raise MCPClientError('工具列表分页异常')
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        return await asyncio.to_thread(self._run_request, "tools/call", {"name": name, "arguments": arguments})
+    async def call_tool(self, name, arguments):
+        async with self.connect() as client:
+            result = await client.call_tool(name, arguments)
+            return result.model_dump(by_alias=True, exclude_none=True)
 
-    async def close(self) -> None:
-        return None
 
-    def _run_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        with subprocess.Popen(
-            self.command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=self.cwd,
-        ) as process:
-            self._sync_request(
-                process,
-                "initialize",
-                {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "agenticrag-local-client", "version": "1.0.0"},
-                },
-            )
-            self._sync_notify(process, "notifications/initialized", {})
-            result = self._sync_request(process, method, params)
-            process.terminate()
-            try:
-                process.wait(timeout=1.5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-            return result
+class StdioMCPClient(MCPConnection):
+    def __init__(self, command: list[str], cwd: str | None = None):
+        super().__init__({'transport': 'stdio', 'command': command[0], 'args': command[1:], 'cwd': cwd})
 
-    def _sync_request(self, process: subprocess.Popen[bytes], method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        self._request_id += 1
-        request_id = self._request_id
-        self._write_message(
-            process,
-            {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": method,
-                "params": params,
-            },
-        )
-        while True:
-            message = self._read_message(process)
-            if message.get("id") != request_id:
-                continue
-            if "error" in message:
-                raise MCPClientError(str(message["error"]))
-            return message.get("result", {})
-
-    def _sync_notify(self, process: subprocess.Popen[bytes], method: str, params: Dict[str, Any]) -> None:
-        self._write_message(
-            process,
-            {
-                "jsonrpc": "2.0",
-                "method": method,
-                "params": params,
-            },
-        )
-
-    def _write_message(self, process: subprocess.Popen[bytes], payload: Dict[str, Any]) -> None:
-        if process.stdin is None:
-            raise MCPClientError("MCP process stdin is not available.")
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-        process.stdin.write(header + body)
-        process.stdin.flush()
-
-    def _read_message(self, process: subprocess.Popen[bytes]) -> Dict[str, Any]:
-        if process.stdout is None:
-            raise MCPClientError("MCP process stdout is not available.")
-
-        headers: Dict[str, str] = {}
-        while True:
-            line = process.stdout.readline()
-            if not line:
-                stderr = self._read_stderr(process)
-                raise MCPClientError(f"MCP process closed unexpectedly. {stderr}".strip())
-            stripped = line.decode("utf-8").strip()
-            if not stripped:
-                break
-            name, _, value = stripped.partition(":")
-            headers[name.lower()] = value.strip()
-
-        length = int(headers.get("content-length", "0"))
-        body = process.stdout.read(length)
-        return json.loads(body.decode("utf-8"))
-
-    def _read_stderr(self, process: subprocess.Popen[bytes]) -> str:
-        if process.stderr is None:
-            return ""
-        try:
-            return process.stderr.read().decode("utf-8", errors="ignore")
-        except Exception:
-            return ""
+    async def close(self):
+        pass  # Sessions belong to each operation, not to the adapter lifetime.

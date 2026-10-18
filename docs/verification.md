@@ -17,7 +17,7 @@ npm --prefix frontend run build
 ## 后端
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py tests/test_agent_upgrade.py tests/test_knowledge_smoke.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_workbench_smoke.py tests/test_provider_settings.py tests/test_agent_upgrade.py tests/test_knowledge_smoke.py tests/test_tool_management.py -q
 ```
 
 核心检查覆盖事务持久化、JSON 幂等迁移、供应商设置、Tavily 请求适配、知识库上传与重复识别、跨库隔离、任务恢复、重建失败和删除一致性。模型与网络调用使用隔离夹具，不默认消耗付费配额。
@@ -208,3 +208,15 @@ Remove-Item Env:WORKBENCH_VITE
 - 桌面与窄屏截图在 Git 忽略的 `frontend/test-results/evidence/retrieval-desktop.png`、`retrieval-mobile.png`，截图中仅关键词库的语义/融合明确标注未启用。
 
 验证边界：语义排序检查使用固定向量夹具和实际 Chroma，验证执行链与排序契约，不评价真实 BGE 的语义召回质量。界面耗时来自服务端实际记录，因共用候选与嵌入，不作为独立模式速度比较。取消只停止浏览器等待，本地检索线程可能继续完成。没有新的远程 CI 结果。
+
+## 2026-10-18 MCP 工具接入检查
+
+环境为 Windows、项目自身 `.venv`、Edge；使用临时 SQLite 与 `tests/mcp_fixture.py`，没有读取用户资料或调用付费模型、Tavily、第三方 MCP 服务。
+
+- ESLint、Prettier、OpenAPI 类型一致性检查、生产构建（含 vue-tsc）通过；既有 Vitest 21 项通过。
+- `pytest tests/test_tool_management.py tests/test_agent_upgrade.py tests/test_workbench_smoke.py -q`：21 项通过。覆盖 SDK stdio / 本机 Streamable HTTP、参数校验、停用与旧配置失效、配置恢复、局部范围隔离、模型参数到实际 MCP 调用，以及取消和超时后的子进程清理。保留一条 Starlette / AnyIO 兼容别名弃用警告。
+- 空结果的隔离回归先复现同一外部工具被 Critic 再次调用，修复后只调用一次、答案仍可修订；跳过重检索的原因写入运行结果。
+- `playwright test tools.spec.ts regressions.spec.ts`：3 项通过。实际经过 FastAPI 构建页面，覆盖配置、发现、Schema 错误、中文试运行、选择保留、启停、刷新恢复和删除；原首次取消后刷新、按库重试、上传反馈归属与焦点恢复通过。
+- 明暗主题截图与 390px 窄屏检查通过，无页面横向溢出或未捕获的页面异常。截图保存在 Git 忽略的 `frontend/test-results/tools-*.png`。工具流程另行复跑通过，截图使用真实主题切换并等待过渡完成。
+
+真实 Function Calling 模型选择使用供应商响应夹具，工具通信使用实际 SDK 与本机服务；这些结果不能代表第三方服务的认证、配额或协议兼容性。当前支持声明只读的文本查询，不支持 OAuth、旧 HTTP SSE 传输和写工具；远程请求发出后的取消不能保证停止服务端计费。本轮未重跑 Vite 代理路径，也没有远端 CI 结果。

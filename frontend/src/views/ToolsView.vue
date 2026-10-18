@@ -2,18 +2,23 @@
 import { computed, ref } from 'vue'
 import { useWorkbench } from '../stores/workbench'
 import AppIcon from '../components/AppIcon.vue'
+import MCPServices from '../components/tools/MCPServices.vue'
 const store = useWorkbench()
 const search = ref('')
 const protocol = ref('all')
-const protocols = computed(() => [...new Set(store.system?.tools.map((t) => t.protocol) ?? [])])
+const builtin = computed(
+  () => store.system?.tools.filter((tool) => !tool.name.startsWith('mcp_')) ?? [],
+)
+const protocols = computed(() => [...new Set(builtin.value.map((t) => t.protocol))])
 const tools = computed(() =>
-  (store.system?.tools ?? []).filter(
+  builtin.value.filter(
     (t) =>
       (protocol.value === 'all' || t.protocol === protocol.value) &&
       `${t.name} ${t.description}`.toLowerCase().includes(search.value.toLowerCase()),
   ),
 )
 const names: Record<string, string> = {
+  library_search: '用户知识库检索',
   knowledge_base_search: '本地知识检索',
   knowledge_graph_search: '知识关系查询',
   web_search: '互联网搜索',
@@ -27,9 +32,15 @@ const names: Record<string, string> = {
     <div class="page-title">
       <div>
         <h1>工具中心</h1>
-        <p>已注册 {{ store.system?.tools.length ?? 0 }} 个工具</p>
+        <p>管理外部查询服务，查看内置工具与调用参数。</p>
       </div>
-      <span class="subtle-badge">只读</span>
+    </div>
+    <MCPServices />
+    <div class="mcp-section-heading">
+      <div>
+        <h2>内置工具</h2>
+        <p>{{ builtin.length }} 个内置能力，按检索范围和问题自动选择。</p>
+      </div>
     </div>
     <div class="page-toolbar">
       <label class="search-field"
@@ -85,11 +96,15 @@ const names: Record<string, string> = {
           </details>
         </div>
         <div class="tool-meta">
-          <span><i class="live-dot"></i>已注册</span><small>连接未验证</small
+          <span>已注册</span
+          ><small>{{ tool.protocol === 'mcp' ? '本地示例服务' : '状态见实际执行记录' }}</small
           ><small>{{ tool.timeout_seconds }}s 超时</small>
         </div>
       </article>
     </div>
-    <p class="page-footnote">MCP 示例服务与配置式知识图谱的结果以每次实际执行记录为准。</p>
+    <p class="page-footnote">
+      Tavily 通过 HTTP API 调用。Function Calling 表示可导出函数
+      Schema，不代表每次都由模型选取；项目能力查询为预置数据示例。
+    </p>
   </main>
 </template>

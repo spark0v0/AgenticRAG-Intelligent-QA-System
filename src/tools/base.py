@@ -38,9 +38,12 @@ class ToolSpec:
     timeout_seconds: float = 15.0
     protocol: ToolProtocol = "native"
     metadata: Dict[str, Any] = field(default_factory=dict)
+    json_schema: Dict[str, Any] | None = None
 
     @property
     def input_schema(self) -> Dict[str, Any]:
+        if self.json_schema is not None:
+            return self.json_schema
         if self.input_model is None:
             return {"type": "object", "properties": {}}
         schema = self.input_model.model_json_schema()

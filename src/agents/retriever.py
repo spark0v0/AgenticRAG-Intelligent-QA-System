@@ -33,10 +33,11 @@ class Retriever(BaseAgent):
             raise ValueError("Invalid input data")
 
         query = retrieval_query(input_data.query)
-        context = input_data.context or {}
+        context = dict(input_data.context or {})
         intent = self._infer_intent(query, context)
         strategy = str(context.get("strategy") or self.default_strategy)
         selected_tools, selector_meta = await self._select_tools(query, intent, context)
+        context["tool_arguments"] = selector_meta.pop("arguments", {})
 
         all_documents: List[Dict[str, Any]] = []
         tool_calls: List[Dict[str, Any]] = []
@@ -144,24 +145,31 @@ class Retriever(BaseAgent):
         scope = context.get("search_scope", "auto")
         if scope in scope_tools:
             return scope_tools[scope], {"mode": "user_scope", "used_function_calling": False}
+        external = any(tool.metadata.get("server_id") for tool in self.registry.list_tools())
         hinted_tools = [tool for tool in context.get("tools") or [] if self.registry.get(tool)]
-        if hinted_tools:
+        if hinted_tools and not external:
             return hinted_tools[: self.max_selected_tools], {"mode": "planner_hint", "used_function_calling": False}
 
-        if self.config.get("tool_selection", "policy") != "model":
+        if self.config.get("tool_selection", "policy") != "model" and not external:
             return self._fallback_tools(intent)[:self.max_selected_tools], {
                 "mode": "intent_policy", "used_function_calling": False}
 
-        available_schemas = self.registry.export_function_schemas()
+        # A library tool is never offered without an explicitly selected library.
+        available_schemas = [schema for schema in self.registry.export_function_schemas()
+                             if schema["function"]["name"] != "library_search"]
         model_config = context.get("model_config")
         selector = build_model_client(model_config) if model_config else self.model_client
+        if external and not selector.supports_function_calling:
+            return self._fallback_tools(intent), {"mode": "intent_policy", "used_function_calling": False,
+                "external_tools_skipped": "当前模型不支持 Function Calling，未调用外部 MCP 工具"}
         try:
             selection = await asyncio.wait_for(
                 selector.select_tools(query, available_schemas, max_tools=self.max_selected_tools),
                 float(self.config.get("selector_timeout_seconds", 5)))
         except (TimeoutError, ValueError):
             return self._fallback_tools(intent), {"mode": "policy_after_selector_failure", "used_function_calling": False}
-        selected = [name for name in selection.tool_names if self.registry.get(name)]
+        selected = [name for name in selection.tool_names if self.registry.get(name) and name != "library_search"
+                    and (not self.registry.get(name).metadata.get("server_id") or name in selection.arguments)]
         if selected:
             return selected, {
                 "mode": "function_calling" if selection.used_function_calling else "heuristic",
@@ -169,6 +177,7 @@ class Retriever(BaseAgent):
                 "selector_provider": selection.provider,
                 "selector_model": selection.model_name,
                 "raw_response": selection.raw_response,
+                "arguments": selection.arguments,
             }
 
         fallback = self._fallback_tools(intent)
@@ -207,7 +216,13 @@ class Retriever(BaseAgent):
         retrieval_mode = context.get("retrieval_mode", "hybrid")
         plan: List[Dict[str, Any]] = []
         for tool_name in tools:
-            if tool_name == "calculator":
+            spec = self.registry.get(tool_name)
+            if spec and spec.metadata.get("server_id"):
+                # Execute the model's validated arguments once; never synthesize query/limit for an unknown schema.
+                if tool_name not in context.get("tool_arguments", {}):
+                    continue
+                payload = context["tool_arguments"][tool_name]
+            elif tool_name == "calculator":
                 payload: Dict[str, Any] = {"expression": query}
             elif tool_name == "weather_lookup":
                 payload = {"query": query, "location": context.get("location") or self._extract_location(query), "days": 1}

@@ -131,6 +131,7 @@ class AgenticRAGSystem:
     ) -> Dict[str, Any]:
         session_id = session_id or str(uuid.uuid4())
         context = dict(context or {})
+        context["external_tools_available"] = any(tool.metadata.get("server_id") for tool in self.retriever.registry.list_tools())
         selected_profile = self._resolve_model_profile(context.get("model_profile") or context.get("model_profile_id"))
         context["model_profile"] = selected_profile["id"]
         context["model_config"] = selected_profile["config"]
@@ -392,7 +393,11 @@ class AgenticRAGSystem:
                 previous = retrieval.metadata.get("retrieval_plan", {}).get("query_variants", [])
                 refined = self.retriever._rewrite_for_retrieval(query, "fact", 1, previous)
                 calls = retrieval.metadata.get("tool_calls", [])
-                if (refined not in previous and retrieval.metadata.get("attempt_count", 0) < self.retriever.max_attempts
+                if any("external" in call.get("metadata", {}).get("tags", []) for call in calls):
+                    # A lexical rewrite does not change a remote tool's structured arguments.
+                    # Revise the answer using existing evidence instead of spending service quota again.
+                    retrieval.metadata.setdefault("retrieval_plan", {})["critic_retry_skipped"] = "external_tool_no_automatic_retry"
+                elif (refined not in previous and retrieval.metadata.get("attempt_count", 0) < self.retriever.max_attempts
                         and any(call.get("status") == "success" for call in calls)):
                     retry = await self.retriever.execute(AgentInput(query=refined, history=history, session_id=session_id,
                         context={**(retrieval_context or {}), "model_config": model_config,

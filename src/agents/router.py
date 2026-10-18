@@ -42,7 +42,8 @@ class Router(BaseAgent):
         # Clear commands should not pay for an additional model round trip.
         clear_intent = classification["intent"] in {"math", "weather", "web_search", "capability", "code", "analysis"}
         greeting = bool(re.fullmatch(r"(?:你好|您好|谢谢|再见|hello|hi)[！!。\s]*", query, re.I))
-        should_use_llm = (self.use_llm and not has_images and scope == "auto"
+        external_tools = context.get("external_tools_available") and scope == "auto" and not context.get("knowledge_base_id")
+        should_use_llm = (self.use_llm and not external_tools and not has_images and scope == "auto"
                           and thinking_mode not in ("quick", "retrieval", "deep")
                           and not clear_intent and not greeting and not classification.get("explicit_intent")
                           and classification["intent"] == "chat" and len(query) > 12)
@@ -59,6 +60,9 @@ class Router(BaseAgent):
             route["reasoning"] = "按用户选择的检索范围执行。"
         elif thinking_mode in ("quick", "retrieval", "deep"):
             route = self._force_route(thinking_mode, intent)
+        elif external_tools and not greeting and not has_images:
+            route = self._force_route("retrieval", intent)
+            route["reasoning"] = "已启用外部查询工具，由工具选择器按问题匹配。"
         else:
             route = self._pick_route(query, dialog_type, complexity, explicit_intent, intent)
         model_tier = "heavy" if complexity >= self.complex_threshold else "light"

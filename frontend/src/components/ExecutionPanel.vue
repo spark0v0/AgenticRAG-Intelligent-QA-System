@@ -2,7 +2,7 @@
 import EvidenceButton from './knowledge/EvidenceButton.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useWorkbench } from '../stores/workbench'
-import type { StageEvent, ToolEvent } from '../types'
+import type { Source, StageEvent, ToolEvent } from '../types'
 import AppIcon from './AppIcon.vue'
 import { sourceLabel } from '../composables/useRunAnalysis'
 import { useTabs } from '../composables/useTabs'
@@ -71,7 +71,7 @@ const stopLabels: Record<string, string> = {
   no_new_evidence: '没有新增证据',
   budget_exhausted: '达到检索轮次上限',
 }
-const sources = computed(
+const sources = computed<Source[]>(
   () =>
     result.value?.source_map ??
     store.selectedEvents.findLast((e) => e.type === 'sources')?.data.items ??
@@ -286,7 +286,7 @@ function format(value: unknown) {
               target="_blank"
               rel="noopener noreferrer"
               >{{ sourceLabel(source.source) }}<AppIcon name="external" :size="12" /></a
-            ><strong v-else>{{ sourceLabel(source.source) }}</strong>
+            ><strong v-else>{{ source.title || sourceLabel(source.source) }}</strong>
             <p>{{ source.excerpt || '当前记录只有来源标识，没有保存证据片段。' }}</p>
             <EvidenceButton :source="source" /></article
         ></template>
@@ -294,7 +294,9 @@ function format(value: unknown) {
           ><p v-if="!tools.length" class="empty-hint">本轮尚无工具调用记录。</p>
           <details v-for="event in tools" :key="event.data.call_id" class="tool-call">
             <summary>
-              <AppIcon name="layers" :size="16" /><strong>{{ event.data.tool }}</strong
+              <AppIcon name="layers" :size="16" /><strong>{{
+                event.data.display_name || event.data.tool
+              }}</strong
               ><span :class="event.data.status">{{
                 statusLabels[event.data.status] || event.data.status
               }}</span>

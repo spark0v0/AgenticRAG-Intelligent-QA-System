@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict, Iterable
 
 from pydantic import BaseModel, ValidationError
+from jsonschema import Draft202012Validator
 from utils.execution import current_execution
 
 from .base import ToolResult, ToolSpec
@@ -18,6 +19,12 @@ class ToolRegistry:
 
     def register(self, spec: ToolSpec) -> None:
         self._tools[spec.name] = spec
+
+    def replace_external(self, specs: Iterable[ToolSpec]) -> None:
+        # Replace once, keeping handlers already acquired by running calls alive.
+        self._tools = {**{name: spec for name, spec in self._tools.items()
+                          if not spec.metadata.get("server_id")},
+                       **{spec.name: spec for spec in specs}}
 
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)
@@ -37,6 +44,8 @@ class ToolRegistry:
         execution = current_execution.get()
         call = {"call_id": str(uuid.uuid4()), "tool": name, "protocol": tool.protocol,
                 "input": payload, "started_at": time.time()}
+        if label := tool.metadata.get("display_name"):
+            call["display_name"] = label
         if execution:
             execution.emit("tool", {**call, "status": "running"})
 
@@ -85,6 +94,11 @@ class ToolRegistry:
         }
 
     def _validate_input(self, tool: ToolSpec, payload: Dict[str, object]) -> BaseModel:
+        if tool.json_schema is not None:
+            errors = list(Draft202012Validator(tool.json_schema).iter_errors(payload))
+            if errors:
+                # Do not echo arguments, which may contain private input.
+                raise ValueError("工具参数不符合 Schema，请检查必填字段、类型与取值范围")
         if tool.input_model is None:
             return _PayloadWrapper(payload=payload)
         return tool.input_model.model_validate(payload)

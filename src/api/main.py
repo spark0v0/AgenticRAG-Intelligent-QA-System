@@ -20,6 +20,7 @@ load_dotenv(ROOT / ".env")
 
 from api.workbench import router, systems
 from api.providers import router as provider_router
+from api.tools import router as tools_router
 from api.knowledge import router as knowledge_router, UploadLimitMiddleware
 from knowledge.service import get_service
 
@@ -40,6 +41,7 @@ app = FastAPI(title="AgenticRAG 智能问答工作台", version="4.0.0", lifespa
 app.include_router(router, include_in_schema=False)
 app.include_router(router, prefix="/api")
 app.include_router(provider_router, prefix="/api")
+app.include_router(tools_router, prefix="/api")
 app.include_router(knowledge_router, prefix="/api")
 app.add_middleware(UploadLimitMiddleware)
 

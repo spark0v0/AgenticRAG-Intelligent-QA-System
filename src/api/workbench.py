@@ -32,6 +32,8 @@ def get_system(mode: Mode = "live") -> AgenticRAGSystem:
         system = AgenticRAGSystem(config)
         from api.providers import apply_settings
         apply_settings(system)
+        from tools.managed import configured_tools
+        system.retriever.registry.replace_external(configured_tools())
         system.memory.recover_interrupted_runs()
         systems[mode] = system
     return systems[mode]

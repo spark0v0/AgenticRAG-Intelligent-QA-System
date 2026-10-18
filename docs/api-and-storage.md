@@ -1,5 +1,7 @@
 # 接口与存储
 
+MCP 服务管理接口、配置存储与调用边界见 [工具接入说明](tools.md)。原有 `/tools` 与 `/api/tools` 继续提供工具列表。
+
 ## 兼容与扩展
 
 执行链升级新增 `context.search_scope`（auto/local/web/all，默认 auto）；快速模式不检索，明确范围约束检索工具。`QueryResult` 新增 `evaluation`（证据结构检查、问题、修订次数、未解决状态）、`timing`（first_delta_ms 可为空、total_ms），`retrieval_plan` 增加查询、范围、轮次预算和停止原因。消息与 run 同时保存这些结果，旧记录缺字段时保持原显示。SSE 事件类型和草稿 generation 协议不变。Chroma 的分词版本变化会重建衍生索引，不删除原始文档或 SQLite；详情见 `architecture.md`。
