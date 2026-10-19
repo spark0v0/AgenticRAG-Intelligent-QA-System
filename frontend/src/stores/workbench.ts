@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue'
-import { defineStore } from 'pinia'
+import { defineStore, storeToRefs } from 'pinia'
+import { useAppearance } from './appearance'
 import { api } from '../api/client'
 import { useKnowledge } from './knowledge'
 import { readEvents } from '../api/sse'
@@ -57,7 +58,9 @@ export const useWorkbench = defineStore('workbench', () => {
   const searchScope = ref<'auto' | 'local' | 'web' | 'all'>('auto')
   const loadingSession = ref(false)
   const error = ref('')
-  const theme = ref(storage.get('rag-theme') || 'light')
+  const appearance = useAppearance()
+  const { theme } = storeToRefs(appearance)
+  const toggleTheme = appearance.toggleTheme
   const pending = new Map<string, ActiveRun>() // non-serializable resources stay outside Pinia state
   let loadVersion = 0
   let sessionController: AbortController | undefined
@@ -397,10 +400,6 @@ export const useWorkbench = defineStore('workbench', () => {
         if (!currentId.value) newChat(false)
       }
     }
-  }
-  function toggleTheme() {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
-    storage.set('rag-theme', theme.value)
   }
   async function send(text?: string) {
     const conversation = current.value

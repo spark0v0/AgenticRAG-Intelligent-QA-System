@@ -2,7 +2,7 @@
 
 基于 Vue 3 与 FastAPI 的智能问答工作台。通过 Router（路由）、Planner（规划）、Retriever（检索）、Generator（生成）、Critic（评审）五类智能体按需协作，结合本地知识库与联网资料生成带引用的回答，让检索依据和执行过程可查看、可追溯。
 
-![问答工作台：当前桌面界面](docs/screenshots/workbench-chat-1440.png)
+![AgenticRAG 产品主页](docs/screenshots/workbench-home-1440.png)
 
 [查看更多界面与窄屏布局](docs/screenshots/README.md)
 
@@ -12,7 +12,7 @@
 - **会话管理**：搜索、置顶、重命名、草稿恢复和完整 Markdown 导出；长会话先加载最近 20 轮，加载更早消息时保持阅读位置。
 - **本地知识库**：上传 TXT、Markdown、文本型 PDF，查看索引状态并重试失败任务；支持关键词、BGE 语义及混合检索，并排比较三路结果。
 - **联网与证据**：接入 Tavily，可与本地资料组合检索；回答引用关联原文片段，PDF 支持站内阅读、翻页、缩放和引用页定位。
-- **执行分析**：展示实际经过的智能体节点、检索轮次、工具调用和耗时，支持历史运行回看。界面提供明暗主题与窄屏布局。
+- **执行分析**：展示实际经过的智能体节点、检索轮次、工具调用和耗时，支持历史运行回看。工作台默认夜间模式，支持主题切换与窄屏布局。
 - **工具接入**：配置 stdio / Streamable HTTP MCP 服务，连接发现工具、校验参数、试运行并选择只读工具用于问答。
 
 ## 技术栈
@@ -20,7 +20,7 @@
 | 模块 | 技术 |
 | --- | --- |
 | 前端工程 | Vue 3、TypeScript、Vite、Pinia、Vue Router |
-| 界面与阅读 | Element Plus、SCSS、markdown-it、DOMPurify、highlight.js、PDF.js |
+| 界面与阅读 | Element Plus、SCSS、WebGL、markdown-it、DOMPurify、highlight.js、PDF.js |
 | 通信与后端 | Fetch / SSE、AbortController、FastAPI、Pydantic、HTTPX、MCP Python SDK |
 | 检索与存储 | FastEmbed / BGE、ChromaDB、BM25、RRF、Tavily、SQLite |
 | 工程检查 | openapi-typescript、ESLint、Prettier、Vitest、Playwright、pytest、GitHub Actions |
@@ -40,7 +40,7 @@ npm --prefix frontend ci
 .\start.bat
 ```
 
-启动器构建前端、启动 FastAPI 并打开 [问答工作台](http://127.0.0.1:8000/chat)。日常可直接双击 `start.bat`；保留窗口，按 `Ctrl+C` 停止。接口文档见 [Swagger UI](http://127.0.0.1:8000/docs)。
+启动器构建前端、启动 FastAPI 并打开 [项目主页](http://127.0.0.1:8000/)，点击「进入工作台」开始使用；也可直接访问 [问答工作台](http://127.0.0.1:8000/chat)。日常可双击 `start.bat`；保留窗口，按 `Ctrl+C` 停止。接口文档见 [Swagger UI](http://127.0.0.1:8000/docs)。
 
 ```powershell
 .\start.bat -Port 8001      # 更换端口

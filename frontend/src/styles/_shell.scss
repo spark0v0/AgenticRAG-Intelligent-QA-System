@@ -78,28 +78,48 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 20px 14px 14px;
+  overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--bg);
 }
-.sidebar-heading {
+.sidebar-pinned {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0 10px;
-  color: var(--muted);
-  font-size: 13px;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sidebar-pinned .icon-button {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+}
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-scroll > * {
+  flex-shrink: 0;
+}
+.sidebar-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .new-chat-button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  flex-shrink: 0;
+  flex: 1;
   min-height: 42px;
-  margin: 12px 0 18px;
+  margin: 0;
   padding: 8px 12px;
   border: 1px solid var(--control-border);
   border-radius: 5px;
@@ -203,9 +223,8 @@
   border-color: var(--accent);
 }
 .session-list {
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 50px;
-  overflow-y: auto;
   padding-top: 8px;
 }
 .sidebar-empty {
@@ -371,7 +390,6 @@
     inset: 56px auto 0 0;
     z-index: 20;
     width: 280px;
-    padding: 16px 14px;
     transform: translateX(-100%);
     visibility: hidden;
     transition: transform 180ms ease;
@@ -388,9 +406,6 @@
   }
   .mobile-only {
     display: inline-flex;
-  }
-  .sidebar-heading {
-    min-height: 36px;
   }
   .history-search .search-clear {
     width: 44px;

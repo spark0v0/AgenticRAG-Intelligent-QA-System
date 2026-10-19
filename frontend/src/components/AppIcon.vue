@@ -42,6 +42,7 @@ import {
   SlidersHorizontal,
   Pin,
   Ellipsis,
+  House,
 } from '@lucide/vue'
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), { size: 20 })
 const icons = {
@@ -86,6 +87,7 @@ const icons = {
   settings: SlidersHorizontal,
   pin: Pin,
   more: Ellipsis,
+  home: House,
 }
 const icon = computed(() => icons[props.name as keyof typeof icons] ?? Sparkles)
 </script>

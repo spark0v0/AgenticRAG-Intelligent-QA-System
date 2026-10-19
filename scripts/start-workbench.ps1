@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
 $indexPath = Join-Path $projectRoot 'frontend\dist\index.html'
-$url = "http://127.0.0.1:$Port/chat"
+$url = "http://127.0.0.1:$Port/"
 $browserJob = $null
 # Keep this script ASCII-compatible for both Windows PowerShell 5.1 and PowerShell 7.
 Push-Location $projectRoot

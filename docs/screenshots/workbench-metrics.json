@@ -1,8 +1,13 @@
 {
-  "date": "2026-10-16T18:32:42.626Z",
+  "date": "2026-10-19T11:25:12.443Z",
   "newModelRequest": false,
   "errors": [],
   "viewports": [
+    {
+      "path": "home",
+      "width": 1440,
+      "overflow": false
+    },
     {
       "path": "chat",
       "width": 1440,
@@ -21,6 +26,11 @@
     {
       "path": "runs",
       "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "home",
+      "width": 390,
       "overflow": false
     },
     {

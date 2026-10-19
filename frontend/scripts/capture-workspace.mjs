@@ -6,6 +6,7 @@ const baseURL = process.env.WORKBENCH_URL || 'http://127.0.0.1:8005'
 const output = process.env.WORKBENCH_SCREENSHOT_DIR || 'test-results/screenshots'
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+await page.emulateMedia({ reducedMotion: 'reduce' })
 const errors = []
 page.on('pageerror', () => errors.push('pageerror'))
 page.on('console', (message) => {
@@ -23,9 +24,13 @@ try {
   mkdirSync(output, { recursive: true })
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
-    for (const path of ['chat', 'knowledge', 'providers', 'runs']) {
-      await page.goto(`${baseURL}/${path}`)
+    for (const path of ['home', 'chat', 'knowledge', 'providers', 'runs']) {
+      await page.goto(`${baseURL}/${path === 'home' ? '' : path}`)
       await expect(page.locator('.connection-line')).toHaveCount(0)
+      if (path === 'home') {
+        await expect(page.getByRole('heading', { name: 'AgenticRAG', exact: true })).toBeVisible()
+        await expect(page.locator('.knowledge-field')).toHaveAttribute('data-renderer', /webgl|fallback/)
+      }
       if (path === 'chat') await expect(page.getByRole('link', { name: '配置可用模型' })).toBeVisible()
       if (path === 'knowledge') await expect(page.getByRole('heading', { name: '让资料成为可追溯的答案' })).toBeVisible()
       if (path === 'providers') {
