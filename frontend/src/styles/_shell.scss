@@ -42,9 +42,10 @@
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 6px;
-  background: var(--text);
-  color: var(--bg);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #00d2ff 0%, #3b82f6 100%);
+  color: #090d16;
+  box-shadow: 0 0 12px rgba(0, 210, 255, 0.4);
 }
 .breadcrumb {
   display: flex;
@@ -121,18 +122,25 @@
   min-height: 42px;
   margin: 0;
   padding: 8px 12px;
-  border: 1px solid var(--control-border);
-  border-radius: 5px;
+  border: 1px solid rgba(0, 210, 255, 0.25);
+  background: linear-gradient(135deg, rgba(0, 210, 255, 0.08) 0%, rgba(56, 189, 248, 0.02) 100%);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-size: 15px;
   font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .new-chat-button svg {
   color: var(--accent);
 }
 .new-chat-button:hover {
-  background: var(--surface);
+  background: rgba(0, 210, 255, 0.14);
   border-color: var(--accent);
+  box-shadow: 0 0 14px -2px rgba(0, 210, 255, 0.25);
+  transform: translateY(-1px);
+}
+.new-chat-button:active {
+  transform: translateY(0);
 }
 .main-nav {
   display: grid;
@@ -145,9 +153,10 @@
   gap: 12px;
   min-height: 40px;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 15px;
   color: var(--muted);
+  transition: all 0.15s ease;
 }
 .main-nav a:hover,
 .session-item:hover {
@@ -156,8 +165,9 @@
 }
 .main-nav .router-link-active {
   background: var(--surface-hover);
-  color: var(--text);
+  color: var(--accent);
   font-weight: 600;
+  border-left: 2px solid var(--accent);
 }
 .main-nav .router-link-active svg {
   color: var(--accent);
