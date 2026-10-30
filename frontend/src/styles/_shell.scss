@@ -123,8 +123,8 @@
   min-height: 42px;
   margin: 0;
   padding: 8px 12px;
-  border: 1px solid rgba(0, 210, 255, 0.25);
-  background: linear-gradient(135deg, rgba(0, 210, 255, 0.08) 0%, rgba(56, 189, 248, 0.02) 100%);
+  border: 1px solid var(--run-id-border);
+  background: var(--nav-active-bg);
   border-radius: var(--radius-sm);
   color: var(--text);
   font-size: 15px;
@@ -165,7 +165,7 @@
   background: var(--surface);
 }
 .main-nav .router-link-active {
-  background: var(--surface-hover);
+  background: var(--nav-active-bg);
   color: var(--accent);
   font-weight: 600;
   border-left: 2px solid var(--accent);
