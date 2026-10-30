@@ -86,6 +86,9 @@ export class ActiveRun {
       case 'delta':
         if (event.data.generation !== this.generation) break
         this.setStatus('streaming')
+        if (this.assistant.notice === '正在接收模型增量响应') {
+          this.assistant.notice = ''
+        }
         this.buffer += event.data.text
         this.timer ??= setTimeout(() => this.flush(), 60)
         break

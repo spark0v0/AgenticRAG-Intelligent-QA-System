@@ -112,25 +112,29 @@
   border: 1px solid var(--line);
 }
 .thinking-indicator {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 12px 0;
+  gap: 6px;
+  padding: 8px 0;
   color: var(--muted);
+  font-size: 13px;
 }
-.thinking-indicator > span {
-  width: 5px;
-  height: 5px;
+.thinking-indicator .thinking-dot {
+  width: 6px;
+  height: 6px;
   background: var(--accent);
   border-radius: 50%;
   animation: pulse 1.4s infinite;
 }
-.thinking-indicator > span:nth-child(2) {
+.thinking-indicator .thinking-dot:nth-child(2) {
   animation-delay: 0.2s;
 }
+.thinking-indicator .thinking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 .thinking-indicator small {
-  font-size: 14px;
-  margin-left: 7px;
+  font-size: 13px;
+  margin-left: 6px;
 }
 .markdown {
   font-size: 16px;

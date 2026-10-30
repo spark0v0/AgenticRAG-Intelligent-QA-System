@@ -92,7 +92,7 @@ const isSuccess = computed(() => props.message.status === 'success')
     <button
       v-if="isRunning"
       type="button"
-      class="agent-flow-pill running-pill thinking-indicator"
+      class="agent-flow-pill running-pill"
       :title="message.run_id ? '点击查看实时执行进度' : undefined"
       :disabled="!message.run_id"
       @click="message.run_id && $emit('inspect', message.run_id)"
@@ -192,6 +192,7 @@ const isSuccess = computed(() => props.message.status === 'success')
     background: var(--accent);
     box-shadow: 0 0 10px var(--accent);
     animation: pill-pulse 1.6s infinite ease-in-out;
+    flex-shrink: 0;
   }
 
   .pill-agent-badge {
@@ -200,22 +201,30 @@ const isSuccess = computed(() => props.message.status === 'success')
     font-family: 'Inter', ui-monospace, monospace;
     font-size: 12px;
     letter-spacing: 0.2px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .pill-divider {
     color: var(--muted);
     opacity: 0.6;
+    flex-shrink: 0;
   }
 
   .pill-phase-text {
     color: var(--text);
     font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: min(520px, 75vw);
   }
 
   .pill-arrow-icon {
     color: var(--muted);
     margin-left: 2px;
     opacity: 0.7;
+    flex-shrink: 0;
   }
 }
 

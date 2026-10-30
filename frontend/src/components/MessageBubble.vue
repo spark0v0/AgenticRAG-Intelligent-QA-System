@@ -46,7 +46,13 @@ const { copy, feedback } = useClipboard()
           @citation="message.run_id && $emit('inspect', message.run_id, $event)"
         />
         <p
-          v-if="message.notice"
+          v-if="
+            message.notice &&
+            (!message.content ||
+              message.status === 'error' ||
+              message.status === 'cancelled' ||
+              message.result?.model_error)
+          "
           class="message-notice"
           :class="{
             warning:
