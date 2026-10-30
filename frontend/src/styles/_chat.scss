@@ -368,7 +368,7 @@
 .run-summary {
   padding: 20px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, var(--surface) 0%, rgba(21, 30, 54, 0.4) 100%);
+  background: var(--panel-summary-bg);
   position: relative;
 }
 .run-summary > strong {
@@ -406,7 +406,7 @@
   font-family: 'Inter', ui-monospace, monospace;
   font-size: 11px;
   margin-top: 10px;
-  border: 1px solid rgba(0, 210, 255, 0.2);
+  border: 1px solid var(--run-id-border);
 }
 .detail-tabs {
   display: flex;
@@ -495,7 +495,7 @@
 }
 .assessment {
   background: var(--surface);
-  border: 1px solid rgba(0, 210, 255, 0.2);
+  border: 1px solid var(--run-id-border);
   border-left: 3px solid var(--accent);
   padding: 16px;
   border-radius: var(--radius-md);
@@ -859,7 +859,7 @@
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  border: 1px solid rgba(0, 210, 255, 0.25);
+  border: 1px solid var(--run-id-border);
   vertical-align: 1px;
   line-height: 1.4;
   margin: 0 2px;

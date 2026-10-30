@@ -157,16 +157,17 @@ const isSuccess = computed(() => props.message.status === 'success')
   padding: 5px 12px;
   border-radius: var(--radius-md);
   font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--flow-pill-bg);
+  border: 1px solid var(--flow-pill-border);
   color: var(--text);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--flow-pill-shadow);
+  max-width: 100%;
 
   &:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 16px -2px rgba(0, 210, 255, 0.25);
+    border-color: var(--flow-pill-hover-border);
+    box-shadow: var(--flow-pill-hover-shadow);
     transform: translateY(-1px);
   }
 
@@ -182,8 +183,8 @@ const isSuccess = computed(() => props.message.status === 'success')
 }
 
 .running-pill {
-  background: linear-gradient(90deg, rgba(0, 210, 255, 0.08) 0%, rgba(56, 189, 248, 0.03) 100%);
-  border-color: rgba(0, 210, 255, 0.3);
+  background: var(--flow-pill-running-bg);
+  border-color: var(--flow-pill-running-border);
 
   .pill-pulse-dot {
     width: 7px;
@@ -229,8 +230,8 @@ const isSuccess = computed(() => props.message.status === 'success')
 }
 
 .success-pill {
-  background: linear-gradient(90deg, rgba(15, 23, 42, 0.6) 0%, rgba(21, 30, 54, 0.8) 100%);
-  border-color: rgba(0, 210, 255, 0.18);
+  background: var(--flow-pill-bg);
+  border-color: var(--flow-pill-border);
   backdrop-filter: blur(8px);
   flex-wrap: wrap;
 
@@ -250,7 +251,7 @@ const isSuccess = computed(() => props.message.status === 'success')
       color: var(--accent);
     }
     &.node-critic {
-      color: #38bdf8;
+      color: var(--success);
       &.has-warning {
         color: var(--warning);
       }
@@ -259,7 +260,7 @@ const isSuccess = computed(() => props.message.status === 'success')
 
   .pill-separator {
     color: var(--muted);
-    opacity: 0.4;
+    opacity: 0.5;
     font-size: 11px;
     user-select: none;
   }
@@ -270,7 +271,7 @@ const isSuccess = computed(() => props.message.status === 'success')
     gap: 3px;
     padding: 1px 6px;
     border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--flow-pill-tag-bg);
     font-size: 11px;
     font-family: 'Inter', monospace;
     color: var(--muted);
