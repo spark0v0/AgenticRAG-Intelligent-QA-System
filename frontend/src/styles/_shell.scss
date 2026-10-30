@@ -67,8 +67,9 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
 }
 .header-actions .icon-button {
@@ -156,13 +157,21 @@
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   font-size: 15px;
-  color: var(--muted);
+  color: var(--text-secondary);
+  font-weight: 500;
   transition: all 0.15s ease;
+}
+.main-nav a svg {
+  color: var(--muted);
+  transition: color 0.15s ease;
 }
 .main-nav a:hover,
 .session-item:hover {
   color: var(--text);
   background: var(--surface);
+}
+.main-nav a:hover svg {
+  color: var(--text);
 }
 .main-nav .router-link-active {
   background: var(--nav-active-bg);
@@ -178,10 +187,12 @@
 }
 .nav-section-label {
   margin-top: 16px;
-  padding: 16px 12px 7px;
+  padding: 16px 12px 6px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 .history-heading {
   display: flex;
@@ -189,8 +200,9 @@
   align-items: center;
   padding: 8px 10px 4px;
   border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 .history-search {
   display: flex;
@@ -209,6 +221,11 @@
   outline: 0;
   background: transparent;
   font-size: 13px;
+  color: var(--text);
+
+  &::placeholder {
+    color: var(--placeholder);
+  }
 }
 .history-search .search-clear {
   display: grid;
@@ -254,6 +271,8 @@
   border-radius: 4px;
   text-align: left;
   font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 450;
 }
 .session-item span {
   overflow: hidden;

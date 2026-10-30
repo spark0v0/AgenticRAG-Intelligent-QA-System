@@ -421,12 +421,14 @@
   gap: 5px;
   border-bottom: 2px solid transparent;
   height: 48px;
-  color: var(--muted);
+  color: var(--text-secondary);
+  font-weight: 500;
   font-size: 14px;
 }
 .detail-tabs button.active {
   border-color: var(--accent);
   color: var(--accent);
+  font-weight: 600;
 }
 .detail-tabs span {
   background: var(--surface);
@@ -901,7 +903,8 @@
 }
 .composer-shortcut kbd {
   font: inherit;
-  color: var(--muted);
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 .search-scope {
   display: flex;
@@ -920,7 +923,8 @@
     padding: 5px 8px;
     min-height: 32px;
     border-bottom: 2px solid transparent;
-    color: var(--muted);
+    color: var(--text-secondary);
+    font-weight: 500;
     cursor: pointer;
   }
   label:hover {

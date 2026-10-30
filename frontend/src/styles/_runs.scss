@@ -34,7 +34,8 @@
 .run-filters button {
   flex: 1;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text-secondary);
+  font-weight: 500;
   padding: 6px;
   border-radius: 4px;
 }
@@ -216,7 +217,8 @@
   gap: 14px;
   align-items: center;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text-secondary);
+  font-weight: 600;
   padding: 0 12px 12px;
 }
 .waterfall-heading > span:nth-child(2) {
