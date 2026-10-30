@@ -38,7 +38,7 @@ test('MCP configuration, discovery, schema trial, activation and narrow layout',
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/tools-mobile.png', fullPage: true })
-  await page.getByRole('button', { name: '切换深色主题' }).click()
+  await page.getByRole('button', { name: /切换(?:深色|浅色)主题/ }).click()
   await page.screenshot({ path: 'test-results/tools-mobile-dark.png', fullPage: true, animations: 'disabled' })
   await card.getByRole('button', { name: '停用', exact: true }).click()
   await expect(card.getByText('未用于问答', { exact: true })).toBeVisible()

@@ -167,11 +167,11 @@ function dateLabel(timestamp: number) {
     @click="navigate"
   >
     <div class="sidebar-pinned">
-      <button class="new-chat-button" @click="$emit('newChat')">
-        <AppIcon name="plus" :size="18" />新建会话
-      </button>
       <button class="icon-button mobile-only" aria-label="收起导航" @click="$emit('close')">
         <AppIcon name="close" :size="18" />
+      </button>
+      <button class="new-chat-button" @click="$emit('newChat')">
+        <AppIcon name="plus" :size="18" />新建会话
       </button>
     </div>
     <div class="sidebar-scroll" tabindex="0" role="region" aria-label="导航与历史会话">
