@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import type { Message } from '../types'
 import AppIcon from './AppIcon.vue'
+import AgentFlowPill from './AgentFlowPill.vue'
 import MarkdownContent from './MarkdownContent.vue'
 import { useClipboard } from '../composables/useClipboard'
 defineProps<{ message: Message; selected: boolean }>()
 defineEmits<{ inspect: [runId: string, sourceId?: string] }>()
 const { copy, feedback } = useClipboard()
-const scopeLabels: Record<string, string> = {
-  auto: '自动检索',
-  local: '本地 RAG',
-  web: '联网搜索',
-  all: '混合检索',
-}
 </script>
 <template>
   <article class="message" :class="message.role">
@@ -39,14 +34,10 @@ const scopeLabels: Record<string, string> = {
           /></div
       ></template>
       <template v-else>
-        <div v-if="message.result?.retrieval_plan" class="answer-evidence-summary">
-          <AppIcon name="book" :size="14" />
-          <span>{{ scopeLabels[message.result.retrieval_plan.search_scope] || '检索回答' }}</span>
-          <span>{{ message.result.source_map?.length || 0 }} 个证据来源</span>
-          <span v-if="message.result.timing?.first_delta_ms != null"
-            >首增量 {{ (message.result.timing.first_delta_ms / 1000).toFixed(1) }}s</span
-          >
-        </div>
+        <AgentFlowPill
+          :message="message"
+          @inspect="message.run_id && $emit('inspect', message.run_id)"
+        />
         <MarkdownContent
           v-if="message.content"
           :content="message.content"
@@ -54,10 +45,6 @@ const scopeLabels: Record<string, string> = {
           :sources="message.result?.source_map"
           @citation="message.run_id && $emit('inspect', message.run_id, $event)"
         />
-        <div v-else-if="message.status === 'submitting'" class="thinking-indicator" role="status">
-          <span></span><span></span><span></span
-          ><small>{{ message.phase || '正在建立本轮请求…' }}</small>
-        </div>
         <p
           v-if="message.notice"
           class="message-notice"

@@ -156,22 +156,31 @@
   padding: 0 0 24px;
 }
 .run-metrics > div {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.run-metrics > div:hover {
+  border-color: rgba(0, 210, 255, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.run-metrics > div:first-child {
   border-left: 1px solid var(--line);
   padding-left: 16px;
 }
-.run-metrics > div:first-child {
-  border: 0;
-  padding-left: 0;
-}
 .run-metrics span {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .run-metrics strong {
   font-size: 20px;
-  font-weight: 550;
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'Inter', ui-monospace, monospace;
   white-space: nowrap;
 }
 .run-metrics small {

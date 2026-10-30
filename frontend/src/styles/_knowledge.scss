@@ -407,10 +407,20 @@
   line-height: 1.8;
 }
 .kb-probe-grid .kb-hit {
-  background: var(--bg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 14px;
   overflow-wrap: anywhere;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  &:hover {
+    border-color: rgba(0, 210, 255, 0.35);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px);
+  }
   > strong {
     font-size: 14px;
+    color: var(--text);
   }
   > p {
     display: -webkit-box;
@@ -420,6 +430,7 @@
     line-height: 1.8;
     font-size: 13px;
     margin: 10px 0;
+    color: var(--muted);
   }
 }
 .kb-hit-ranking {
@@ -433,16 +444,24 @@
   > span:first-child {
     color: var(--accent);
     font-weight: 600;
+    background: var(--accent-soft);
+    border: 1px solid rgba(0, 210, 255, 0.2);
+    border-radius: var(--radius-sm);
+    padding: 1px 6px;
+    font-family: 'Inter', ui-monospace, monospace;
   }
   > span:nth-child(2) {
     padding: 2px 6px;
     border-radius: 4px;
-    background: var(--surface);
+    background: var(--surface-hover);
+    color: var(--muted);
   }
   > small {
     margin-left: auto;
     font-size: 12px;
-    color: var(--muted);
+    color: var(--accent);
+    font-family: 'Inter', ui-monospace, monospace;
+    font-weight: 600;
   }
 }
 .kb-hit-positions {
