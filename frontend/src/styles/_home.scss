@@ -1,25 +1,17 @@
 // The entrance has its own palette; the workbench keeps the user's saved theme.
 .home-page {
   --home-ink: #edf1f7;
-  --home-muted: #8c9bb0;
-  --home-dim: #475569;
-  --home-line: rgba(255, 255, 255, 0.08);
+  --home-muted: #a1a9b8;
+  --home-line: rgba(255, 255, 255, 0.12);
   --home-accent: #00d2ff;
 
   min-height: 100svh;
   height: 100svh;
   color: var(--home-ink);
-  background: #06080c;
+  background: #07090d;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    radial-gradient(ellipse at 85% 25%, rgba(0, 210, 255, 0.04), transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(139, 92, 246, 0.03), transparent 60%);
-  background-size:
-    72px 72px,
-    72px 72px,
-    auto,
-    auto;
+    radial-gradient(ellipse at 85% 25%, rgba(0, 210, 255, 0.05), transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(139, 92, 246, 0.04), transparent 60%);
   position: relative;
   isolation: isolate;
   overflow: clip;
@@ -62,7 +54,7 @@
    Top Navigation
    ========================================================================= */
 .home-nav {
-  height: 96px;
+  height: 104px;
   margin: 0 clamp(24px, 5.5vw, 100px);
   display: flex;
   align-items: center;
@@ -77,7 +69,7 @@
   gap: 12px;
   font-size: 19px;
   font-weight: 600;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.6px;
   color: #fff;
   transition: opacity 160ms;
 
@@ -87,9 +79,9 @@
 }
 
 .home-brand-symbol {
-  width: 30px;
-  height: 30px;
-  fill: #06080c;
+  width: 32px;
+  height: 32px;
+  fill: #07090d;
   stroke: #cad7eb;
   stroke-width: 1.35;
   transition: stroke 160ms ease;
@@ -99,14 +91,6 @@
   stroke: #00d2ff;
 }
 
-.home-brand-text {
-  color: #edf1f7;
-}
-
-.home-brand-highlight {
-  color: #00d2ff;
-}
-
 .home-nav-links {
   display: flex;
   align-items: center;
@@ -114,11 +98,11 @@
   font-size: 14px;
 
   .home-nav-button {
-    color: #cbd5e1;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e2e8f3;
+    border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 5px;
-    padding: 9px 16px;
-    min-height: 42px;
+    padding: 10px 16px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -132,7 +116,7 @@
 
     &:hover {
       background: rgba(255, 255, 255, 0.06);
-      border-color: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.35);
       color: #fff;
     }
   }
@@ -152,7 +136,7 @@
 
 .home-main {
   outline: none;
-  height: calc(100svh - 96px);
+  height: calc(100svh - 104px);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -164,7 +148,7 @@
 .home-hero {
   position: relative;
   flex: 1;
-  min-height: 460px;
+  min-height: 480px;
   display: flex;
   align-items: center;
 }
@@ -173,62 +157,37 @@
   position: relative;
   z-index: 2;
   margin-left: clamp(24px, 8vw, 150px);
-  padding-bottom: 12px;
+  padding-bottom: 26px;
   pointer-events: none;
   width: max-content;
   max-width: calc(100% - 48px);
 
   h1 {
-    margin: 0 0 16px;
+    margin: 0 0 18px;
     font-weight: 500;
-    font-size: clamp(60px, 7.5vw, 126px);
-    letter-spacing: -0.07em;
-    line-height: 1.05;
+    font-size: clamp(64px, 7.6vw, 132px);
+    letter-spacing: -0.075em;
+    line-height: 1.08;
     color: #ffffff;
-    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.8);
-  }
-}
-
-.home-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 9999px;
-  padding: 4px 12px;
-  margin-bottom: 20px;
-  font-size: 12px;
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-weight: 450;
-  color: #94a3b8;
-  letter-spacing: 0.04em;
-
-  .badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #00d2ff;
-    box-shadow: 0 0 6px #00d2ff;
+    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.6);
   }
 }
 
 .home-statement {
   margin: 0;
-  font-size: clamp(24px, 2.5vw, 38px);
+  font-size: clamp(24px, 2.5vw, 40px);
   font-weight: 400;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.045em;
   color: #edf1f7;
   line-height: 1.3;
 }
 
 .home-description {
-  margin: 20px 0 32px;
+  margin: 23px 0 36px;
   color: var(--home-muted);
   font-size: 15px;
-  letter-spacing: 0.02em;
-  line-height: 1.7;
-  max-width: 540px;
+  letter-spacing: 0.025em;
+  line-height: 1.6;
 }
 
 .home-actions {
@@ -241,14 +200,14 @@
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 32px;
-  padding: 15px 22px 15px 24px;
-  min-height: 52px;
+  gap: 36px;
+  padding: 15px 20px 15px 24px;
+  min-height: 54px;
   font-size: 15px;
   font-weight: 500;
-  background: #edf2f7;
-  color: #06090e;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: #e5ebf4;
+  color: #101722;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 4px;
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.5),
@@ -259,7 +218,7 @@
     transform 180ms ease;
 
   &:hover {
-    background: #ffffff;
+    background: #fff;
     box-shadow: 0 6px 36px rgba(0, 210, 255, 0.35);
     transform: translateY(-1px);
   }
@@ -291,8 +250,8 @@
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(ellipse at 72% 35%, rgba(130, 118, 219, 0.05), transparent 48%),
-      radial-gradient(ellipse at 45% 65%, rgba(57, 139, 211, 0.1), transparent 58%);
+      radial-gradient(ellipse at 72% 35%, rgba(130, 118, 219, 0.06), transparent 48%),
+      radial-gradient(ellipse at 45% 65%, rgba(57, 139, 211, 0.12), transparent 58%);
     pointer-events: none;
   }
 
@@ -301,7 +260,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(90deg, #06080c 0%, rgba(6, 8, 12, 0.75) 16%, transparent 40%);
+    background: linear-gradient(90deg, #07090d 0%, rgba(7, 9, 13, 0.75) 15%, transparent 39%);
   }
 }
 
@@ -334,22 +293,22 @@
 }
 
 .knowledge-field-control {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 1px solid var(--home-line);
   border-radius: 50%;
-  color: #94a3b8;
-  background: rgba(6, 8, 12, 0.75);
+  color: #c1cad8;
+  background: rgba(7, 9, 13, 0.7);
   backdrop-filter: blur(8px);
   cursor: pointer;
   transition: all 160ms ease;
 
   &:hover,
   &[aria-pressed='true'] {
-    background: rgba(0, 210, 255, 0.1);
-    color: #00d2ff;
+    background: rgba(0, 210, 255, 0.12);
+    color: #e4edff;
     border-color: rgba(0, 210, 255, 0.4);
     box-shadow: 0 0 16px rgba(0, 210, 255, 0.2);
   }
@@ -364,16 +323,15 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0 clamp(24px, 5.5vw, 100px);
-  padding: 24px 0 28px;
+  padding: 31px 0 35px;
   border-top: 1px solid var(--home-line);
 }
 
 .home-page .home-destination {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 12px 28px;
-  border-radius: 6px;
+  gap: 20px;
+  padding: 10px 32px;
   position: relative;
   transition: background 180ms ease;
 
@@ -387,47 +345,22 @@
     border-left: 1px solid var(--home-line);
   }
 
-  .destination-index {
-    font-size: 12px;
-    font-family: 'JetBrains Mono', Consolas, monospace;
-    color: #475569;
-    font-weight: 500;
+  > svg:first-child {
+    color: #a1aec3;
+    flex-shrink: 0;
     transition: color 180ms ease;
-  }
-
-  .destination-body {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .destination-title-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-
-    svg {
-      color: #94a3b8;
-      transition: color 180ms ease;
-    }
   }
 
   .home-destination-title {
-    font-size: 15px;
-    font-weight: 500;
-    color: #e2e8f0;
+    font-size: 16px;
+    font-weight: 450;
+    color: #edf1f7;
     transition: color 180ms ease;
-  }
-
-  .destination-desc {
-    font-size: 12px;
-    color: #64748b;
-    letter-spacing: 0.01em;
   }
 
   .home-destination-arrow {
     margin-left: auto;
-    color: #475569;
+    color: #68758a;
     flex-shrink: 0;
     transition:
       color 180ms ease,
@@ -435,19 +368,16 @@
   }
 
   &:hover {
-    background: linear-gradient(0deg, rgba(0, 210, 255, 0.05) 0%, transparent 100%);
+    background: rgba(255, 255, 255, 0.03);
 
-    .destination-index {
-      color: #00d2ff;
-    }
-    .destination-title-row svg {
+    > svg:first-child {
       color: #00d2ff;
     }
     .home-destination-title {
-      color: #ffffff;
+      color: #fff;
     }
     .home-destination-arrow {
-      color: #00d2ff;
+      color: #e5edfa;
       transform: translate(2px, -2px);
     }
   }
@@ -464,29 +394,29 @@
 
 @media (max-width: 1000px) {
   .home-nav {
-    height: 84px;
+    height: 90px;
   }
   .home-copy {
     margin-left: 6vw;
   }
   .home-copy h1 {
-    font-size: clamp(56px, 8.5vw, 84px);
+    font-size: clamp(64px, 9vw, 86px);
   }
   .knowledge-field {
     left: 18%;
     right: -20%;
   }
   .knowledge-field-art::after {
-    background: linear-gradient(90deg, #06080c 0%, rgba(6, 8, 12, 0.8) 22%, transparent 48%);
+    background: linear-gradient(90deg, #07090d 0%, rgba(7, 9, 13, 0.8) 23%, transparent 50%);
   }
   .knowledge-field-controls {
     right: 23%;
   }
   .home-page .home-destination {
-    padding: 10px 18px;
-    gap: 12px;
+    padding: 8px 20px;
+    gap: 14px;
   }
-  .destination-desc {
+  .home-destination > svg:first-child {
     display: none;
   }
 }
@@ -499,19 +429,19 @@
     overflow-y: auto;
   }
   .home-nav {
-    height: 76px;
-    margin: 0 20px;
+    height: 78px;
+    margin: 0 24px;
   }
   .home-brand {
     font-size: 17px;
     gap: 8px;
   }
   .home-brand-symbol {
-    width: 26px;
-    height: 26px;
+    width: 27px;
+    height: 27px;
   }
   .home-nav-links {
-    gap: 8px;
+    gap: 0;
     font-size: 13px;
   }
   .home-nav-links .home-nav-enter {
@@ -519,78 +449,70 @@
   }
   .home-main {
     height: auto;
-    min-height: calc(100svh - 76px);
+    min-height: calc(100svh - 78px);
   }
   .home-hero {
-    min-height: 540px;
+    height: calc(100svh - 174px);
+    min-height: 580px;
+    max-height: 900px;
     align-items: flex-start;
   }
   .home-copy {
-    margin: 24px 20px 0;
+    margin: 30px 24px 0;
     padding: 0;
   }
-  .home-badge {
-    font-size: 11px;
-    padding: 3px 10px;
+  .home-copy h1 {
+    font-size: clamp(48px, 13vw, 80px);
+    letter-spacing: -0.065em;
     margin-bottom: 14px;
   }
-  .home-copy h1 {
-    font-size: clamp(44px, 12vw, 72px);
-    letter-spacing: -0.06em;
-    margin-bottom: 12px;
-  }
   .home-statement {
-    font-size: 23px;
+    font-size: 25px;
   }
   .home-description {
     font-size: 13px;
-    margin: 14px 0 24px;
+    margin: 16px 0 24px;
   }
   .home-page .home-cta {
     min-height: 48px;
-    padding: 12px 20px;
+    padding: 12px 18px;
     font-size: 14px;
-    gap: 24px;
+    gap: 30px;
   }
   .knowledge-field {
-    inset: 180px -30% -20px -20%;
+    inset: 195px -31% -22px -20%;
   }
   .knowledge-field-art::after {
     background: linear-gradient(
       180deg,
-      #06080c 0%,
-      rgba(6, 8, 12, 0.7) 14%,
+      #07090d 0%,
+      rgba(7, 9, 13, 0.7) 13%,
       transparent 35%,
       transparent 80%,
-      #06080c 100%
+      #07090d 100%
     );
   }
   .knowledge-field-controls {
-    right: 20px;
-    bottom: 24px;
-    gap: 10px;
+    right: 25%;
+    bottom: 34px;
+    gap: 12px;
   }
   .home-destinations {
-    margin: 0 20px;
-    padding: 18px 0 24px;
+    margin: 0 24px;
+    padding: 18px 0 25px;
   }
   .home-page .home-destination {
-    padding: 10px 8px;
+    padding: 10px 12px;
     justify-content: center;
     gap: 8px;
-
-    .destination-index,
-    .destination-desc {
-      display: none;
-    }
   }
   .home-destination-title {
     font-size: 13px;
     white-space: nowrap;
   }
   .home-destination .home-destination-arrow {
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
     margin: 0;
   }
 }
@@ -598,18 +520,18 @@
 @media (max-width: 360px) {
   .home-nav,
   .home-destinations {
-    margin-left: 14px;
-    margin-right: 14px;
+    margin-left: 20px;
+    margin-right: 20px;
   }
   .home-copy {
-    margin-left: 14px;
+    margin-left: 20px;
   }
   .home-hero {
-    min-height: 520px;
+    min-height: 560px;
   }
   .home-page .home-destination {
-    padding-left: 4px;
-    padding-right: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }
 
@@ -618,7 +540,6 @@
   .home-page *::before,
   .home-page *::after {
     transition: none !important;
-    animation: none !important;
     scroll-behavior: auto;
   }
 }

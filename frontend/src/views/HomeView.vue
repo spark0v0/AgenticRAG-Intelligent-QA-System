@@ -7,27 +7,9 @@ import '../styles/_home.scss'
 const main = ref<HTMLElement>()
 
 const entries = [
-  {
-    to: '/knowledge',
-    title: '知识库',
-    index: '01',
-    desc: '稠密向量与 BM25 稀疏检索双轴引擎',
-    icon: 'book',
-  },
-  {
-    to: '/runs',
-    title: '运行分析',
-    index: '02',
-    desc: '毫秒级五智能体决策链与时延瀑布',
-    icon: 'pulse',
-  },
-  {
-    to: '/tools',
-    title: '工具中心',
-    index: '03',
-    desc: '基于标准 MCP 开放协议的工具扩展',
-    icon: 'tool',
-  },
+  { to: '/knowledge', title: '知识库', icon: 'book' },
+  { to: '/runs', title: '运行分析', icon: 'pulse' },
+  { to: '/tools', title: '工具中心', icon: 'tool' },
 ]
 </script>
 
@@ -45,7 +27,7 @@ const entries = [
           <circle cx="16" cy="6" r="2" />
           <circle cx="16" cy="25" r="2" />
         </svg>
-        <span class="home-brand-text">Agentic<span class="home-brand-highlight">RAG</span></span>
+        <span>AgenticRAG</span>
       </RouterLink>
 
       <nav class="home-nav-links" aria-label="主页导航">
@@ -71,17 +53,9 @@ const entries = [
         <KnowledgeField />
 
         <div class="home-copy">
-          <div class="home-badge">
-            <span class="badge-dot"></span>
-            <span>Multi-Agent Architecture · Grounded QA</span>
-          </div>
-
           <h1 id="home-title">AgenticRAG</h1>
           <p class="home-statement">让答案，有据可循。</p>
-          <p class="home-description">
-            连接本地知识、实时网络与工具。<br />
-            具备透明可观测决策链与研报级原文证据溯源。
-          </p>
+          <p class="home-description">连接本地知识、网络与工具。</p>
 
           <div class="home-actions">
             <RouterLink to="/chat" class="home-cta">
@@ -92,7 +66,7 @@ const entries = [
         </div>
       </section>
 
-      <!-- Bottom Architectural Gateway Dock -->
+      <!-- Bottom Destinations Dock -->
       <nav class="home-destinations" aria-label="探索工作台">
         <RouterLink
           v-for="entry in entries"
@@ -100,15 +74,9 @@ const entries = [
           :to="entry.to"
           class="home-destination"
         >
-          <div class="destination-index">{{ entry.index }}</div>
-          <div class="destination-body">
-            <div class="destination-title-row">
-              <AppIcon :name="entry.icon" :size="17" />
-              <span class="home-destination-title">{{ entry.title }}</span>
-            </div>
-            <span class="destination-desc">{{ entry.desc }}</span>
-          </div>
-          <AppIcon name="diagonal" :size="18" class="home-destination-arrow" />
+          <AppIcon :name="entry.icon" :size="21" />
+          <span class="home-destination-title">{{ entry.title }}</span>
+          <AppIcon name="diagonal" :size="19" class="home-destination-arrow" />
         </RouterLink>
       </nav>
     </main>
