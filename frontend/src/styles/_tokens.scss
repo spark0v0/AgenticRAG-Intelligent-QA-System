@@ -96,7 +96,11 @@
   --flow-pill-hover-border: var(--accent);
   --flow-pill-hover-shadow: 0 0 16px -2px rgba(0, 210, 255, 0.35);
   --flow-pill-tag-bg: rgba(255, 255, 255, 0.06);
-  --flow-pill-running-bg: linear-gradient(90deg, rgba(0, 210, 255, 0.08) 0%, rgba(56, 189, 248, 0.03) 100%);
+  --flow-pill-running-bg: linear-gradient(
+    90deg,
+    rgba(0, 210, 255, 0.08) 0%,
+    rgba(56, 189, 248, 0.03) 100%
+  );
   --flow-pill-running-border: rgba(0, 210, 255, 0.3);
   --panel-summary-bg: linear-gradient(180deg, var(--surface) 0%, rgba(21, 30, 54, 0.5) 100%);
   --run-id-border: rgba(0, 210, 255, 0.25);
