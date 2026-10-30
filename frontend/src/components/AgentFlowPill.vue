@@ -31,8 +31,15 @@ const currentStage = computed(() => {
   return { name: 'Agent', label: '智能分析' }
 })
 
+const queryVariantsCount = computed(
+  () => props.message.result?.retrieval_plan?.query_variants?.length ?? 0,
+)
+
 const completedRoute = computed(() => {
   const r = props.message.result?.routing?.route
+  if (r === 'planning' && queryVariantsCount.value > 1) {
+    return `规划拆解 (${queryVariantsCount.value}个子查询)`
+  }
   return (r && routeLabels[r]) || '意图已识别'
 })
 
@@ -50,6 +57,12 @@ const criticEvaluation = computed(() => {
     return {
       text: `${evaluation.issues.length}项待核实`,
       hasIssues: true,
+    }
+  }
+  if (evaluation.revision_count && evaluation.revision_count > 0) {
+    return {
+      text: `自纠错${evaluation.revision_count}轮通过`,
+      hasIssues: false,
     }
   }
   return { text: '校验通过', hasIssues: false }

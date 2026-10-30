@@ -245,7 +245,14 @@ onBeforeUnmount(abort)
           <ol v-else>
             <li v-for="hit in group.hits" :key="hit.source.chunk_id" class="kb-hit">
               <div class="kb-hit-ranking">
-                <span>#{{ hit.rank }}</span
+                <span
+                  class="rank-badge"
+                  :class="{
+                    'rank-gold': hit.rank === 1,
+                    'rank-silver': hit.rank === 2,
+                    'rank-bronze': hit.rank === 3,
+                  }"
+                  >#{{ hit.rank }}</span
                 ><span v-if="comparison">片段 {{ hit.fragment }}</span
                 ><small v-if="comparison">{{ score(hit.doc, group.metadata.mode) }}</small>
               </div>

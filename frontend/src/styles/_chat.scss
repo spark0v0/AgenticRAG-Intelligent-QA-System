@@ -652,21 +652,32 @@
 }
 .suggestion-grid {
   display: grid;
+  gap: 10px;
 }
 .suggestion-grid button {
   display: flex;
   align-items: center;
   gap: 16px;
   text-align: left;
-  padding: 18px 12px;
-  min-height: 82px;
-  border-bottom: 1px solid var(--line);
+  padding: 16px 18px;
+  min-height: 76px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .suggestion-grid button:hover {
-  background: var(--surface);
+  background: var(--surface-hover);
+  border-color: rgba(0, 210, 255, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+.suggestion-grid button:active {
+  transform: translateY(0);
 }
 .suggestion-grid button > svg {
-  color: var(--muted);
+  color: var(--accent);
+  flex-shrink: 0;
 }
 .suggestion-copy {
   flex: 1;
@@ -1058,9 +1069,9 @@
     display: none;
   }
   .suggestion-grid button {
-    min-height: 82px;
+    min-height: 72px;
     gap: 12px;
-    padding: 16px 2px;
+    padding: 14px;
   }
   .suggestion-copy strong {
     font-size: 15px;
